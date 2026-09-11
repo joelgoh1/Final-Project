@@ -55,6 +55,22 @@ class DemoRequest(BaseModel):
     label: Optional[str] = None
 
 
+class DemoRequest(BaseModel):
+    """Start from a preset (or the defaults) and override any generator knob."""
+
+    preset: Optional[str] = None
+    wallet: Optional[list[str]] = None
+    month: Optional[str] = None
+    transaction_count: Optional[int] = None
+    total_spend: Optional[float] = None
+    mix: Optional[dict[str, float]] = None
+    unmapped_pct: Optional[float] = None
+    card_mode: Optional[str] = None
+    primary_card: Optional[str] = None
+    seed: Optional[int] = None
+    label: Optional[str] = None
+
+
 class MonthUpdate(BaseModel):
     label: str
 
@@ -159,11 +175,8 @@ def analyze_demo(request: DemoRequest) -> dict:
     """Generate a synthetic statement from the requested knobs and analyze it."""
     overrides = request.model_dump(exclude={"preset", "custom_cards"})
     try:
-        if request.preset:
-            preset = demo.preset(request.preset)
-            overrides.setdefault("label", None)
-            if overrides["label"] is None:
-                overrides["label"] = preset["label"]
+        if request.preset and overrides.get("label") is None:
+            overrides["label"] = demo.preset(request.preset)["label"]
         config = demo.resolve_config(request.preset, overrides)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Unknown demo preset '{request.preset}'.")
@@ -176,7 +189,7 @@ def analyze_demo(request: DemoRequest) -> dict:
 
     statement = demo.generate(config)
     payload = _analyze_and_store(
-        statement.rows, config.wallet, "demo", statement.meta, custom_cards=request.custom_cards
+        statement.rows, config.wallet, "demo", statement.meta, label=config.label, custom_cards=request.custom_cards
     )
     payload["demo_config"] = config.model_dump()
     payload["demo_config"]["preset"] = request.preset

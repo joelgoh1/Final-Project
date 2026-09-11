@@ -68,16 +68,6 @@ async function init() {
   if (state.months.length) await showMonth(state.months[state.months.length - 1].session_id);
 }
 
-async function runFixture(fixtureId, button) {
-  await analyze(button, () =>
-    fetch("/api/analyze/fixture", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fixture_id: fixtureId }),
-    })
-  );
-}
-
 async function runUpload() {
   const files = $("file-input").files;
   if (!files || !files.length) {
