@@ -82,6 +82,10 @@
       </p>
       <input type="file" id="file-input" accept="application/pdf" multiple />
       <label class="field">
+        <span>Name this month (optional &mdash; defaults to the statement period, e.g. "Aug 2026")</span>
+        <input type="text" id="upload-label" maxlength="60" placeholder="e.g. Aug 2026 - UOB + DBS" />
+      </label>
+      <label class="field">
         <span>Card for these statements</span>
         <select id="card-override"><option value="">Detect from the statement header</option></select>
       </label>
@@ -112,16 +116,16 @@
 
   <!-- SCREEN 2: the dashboard -->
   <section id="dashboard" hidden>
-    <div class="month-bar">
+    <nav class="month-bar" aria-label="Months">
       <div id="month-tabs" class="month-tabs"></div>
       <div class="month-bar-actions">
-        <button id="add-month-btn" class="btn secondary" type="button">Add a month</button>
-        <button id="clear-all-btn" class="btn ghost" type="button" hidden>Clear all months</button>
+        <button id="add-month-btn" class="btn secondary" type="button">+ Add month</button>
+        <button id="clear-all-btn" class="btn ghost" type="button">Clear all</button>
       </div>
-    </div>
+    </nav>
 
     <section id="overview" class="card overview" hidden>
-      <h3>All months <span id="overview-count" class="tag"></span></h3>
+      <h3>Across your months <span id="overview-count" class="tag"></span></h3>
       <div class="table-scroll">
         <table id="overview-table">
           <thead><tr><th>Month</th><th>Source</th><th class="num">Spend</th><th class="num">Earned</th><th class="num">Optimal</th><th class="num">Missed</th><th class="num">Yield</th></tr></thead>
@@ -140,8 +144,8 @@
       <div class="source-actions">
         <button id="reshuffle-btn" class="btn secondary" type="button" hidden>Reshuffle demo</button>
         <a id="csv-link" class="btn secondary" href="#">Download CSV audit</a>
-        <button id="rename-btn" class="btn ghost" type="button">Rename</button>
-        <button id="reset-btn" class="btn ghost" type="button">Remove month</button>
+        <button id="rename-btn" class="btn ghost" type="button">Rename month</button>
+        <button id="reset-btn" class="btn ghost" type="button">Remove this month</button>
       </div>
     </div>
 

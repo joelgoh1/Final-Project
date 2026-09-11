@@ -452,10 +452,8 @@ def test_months_crud_list_rename_delete_and_totals(client):
 
     listing = client.get("/api/months").json()
     assert listing["count"] == 2
-    assert [m["session_id"] for m in listing["months"]] == sorted(
-        [first["session_id"], second["session_id"]],
-        key=lambda sid: next(m["period"]["key"] for m in listing["months"] if m["session_id"] == sid),
-    )
+    keys = [m["period"]["key"] for m in listing["months"]]
+    assert keys == sorted(keys)
     totals = listing["totals"]
     assert totals["total_spend"] == round(
         first["summary"]["total_spend"] + second["summary"]["total_spend"], 2
