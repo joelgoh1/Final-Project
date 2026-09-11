@@ -30,8 +30,12 @@
 <main>
   <!-- SCREEN 1: the key user flow starts here -->
   <section id="start" class="card start">
-    <h2>Start with a demo statement</h2>
-    <p class="muted">One click to a full reward-leakage analysis. No file, no login, no account.</p>
+    <div id="months-return" class="months-return" hidden>
+      <span class="muted small" id="months-return-text"></span>
+      <button id="months-return-btn" class="btn ghost" type="button">Back to dashboard</button>
+    </div>
+    <h2 id="start-title">Start with a demo statement</h2>
+    <p class="muted">One click to a full reward-leakage analysis. No file, no login, no account. Each statement you add becomes a month you can switch between and total up.</p>
     <div id="fixture-list" class="fixture-list"></div>
 
     <details class="upload">
@@ -42,6 +46,10 @@
         stripped the moment the text is read.
       </p>
       <input type="file" id="file-input" accept="application/pdf" multiple />
+      <label class="field">
+        <span>Name this month (optional &mdash; defaults to the statement period, e.g. "Aug 2026")</span>
+        <input type="text" id="upload-label" maxlength="60" placeholder="e.g. Aug 2026 - UOB + DBS" />
+      </label>
       <label class="field">
         <span>Card for these statements</span>
         <select id="card-override"><option value="">Detect from the statement header</option></select>
@@ -69,6 +77,25 @@
 
   <!-- SCREEN 2: the dashboard -->
   <section id="dashboard" hidden>
+    <nav class="month-bar" aria-label="Months">
+      <div id="month-tabs" class="month-tabs"></div>
+      <div class="month-bar-actions">
+        <button id="add-month-btn" class="btn secondary" type="button">+ Add month</button>
+        <button id="clear-all-btn" class="btn ghost" type="button">Clear all</button>
+      </div>
+    </nav>
+
+    <section id="overview" class="card overview" hidden>
+      <h3>Across your months <span id="overview-count" class="tag"></span></h3>
+      <div class="table-scroll">
+        <table id="overview-table">
+          <thead><tr><th>Month</th><th>Source</th><th class="num">Spend</th><th class="num">Earned</th><th class="num">Optimal</th><th class="num">Missed</th><th class="num">Yield</th></tr></thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+    </section>
+
     <div class="source-line">
       <div>
         <h2 id="source-label"></h2>
@@ -76,7 +103,8 @@
       </div>
       <div class="source-actions">
         <a id="csv-link" class="btn secondary" href="#">Download CSV audit</a>
-        <button id="reset-btn" class="btn ghost">Clear session</button>
+        <button id="rename-btn" class="btn ghost" type="button">Rename month</button>
+        <button id="reset-btn" class="btn ghost" type="button">Remove this month</button>
       </div>
     </div>
 

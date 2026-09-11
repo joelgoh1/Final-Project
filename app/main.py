@@ -18,7 +18,7 @@ from .advisor import advisor_status, run_advisor
 from .analysis import analyze
 from .export import transactions_csv
 from .parsing.pdf_parser import MAX_UPLOAD_BYTES, StatementParseError, parse_statement_pdf
-from .session_store import store
+from .session_store import Session, clean_label, store
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 SAMPLES_DIR = WEB_DIR.parent / "samples"
@@ -33,9 +33,42 @@ app = FastAPI(
 class FixtureRequest(BaseModel):
     fixture_id: str
     wallet: Optional[list[str]] = None
+    label: Optional[str] = None
 
 
-def _analyze_and_store(raw_rows, wallet_ids, source, source_meta, parse_quality=None) -> dict:
+class MonthUpdate(BaseModel):
+    label: str
+
+
+def _default_label(payload: dict) -> str:
+    return payload.get("period", {}).get("label") or payload["source"].get("cycle_label") or "Statement"
+
+
+def _session_payload(session: Session) -> dict:
+    """Full dashboard payload for one stored month."""
+    payload = dict(session.result.payload)
+    payload["session_id"] = session.id
+    payload["label"] = session.label
+    payload["created_at"] = session.created_at
+    payload["advisor_status"] = advisor_status()
+    payload["advisor"] = session.advisor
+    return payload
+
+
+def _month_summary(session: Session) -> dict:
+    payload = session.result.payload
+    return {
+        "session_id": session.id,
+        "label": session.label,
+        "period": payload.get("period", {}),
+        "source": payload["source"],
+        "summary": payload["summary"],
+        "created_at": session.created_at,
+        "advisor_ran": session.advisor is not None,
+    }
+
+
+def _analyze_and_store(raw_rows, wallet_ids, source, source_meta, parse_quality=None, label=None) -> dict:
     result = analyze(
         raw_rows,
         wallet_ids=wallet_ids,
@@ -43,11 +76,8 @@ def _analyze_and_store(raw_rows, wallet_ids, source, source_meta, parse_quality=
         source_meta=source_meta,
         parse_quality=parse_quality,
     )
-    session = store.put(result)
-    payload = dict(result.payload)
-    payload["session_id"] = session.id
-    payload["advisor_status"] = advisor_status()
-    return payload
+    session = store.put(result, label=clean_label(label, _default_label(result.payload)))
+    return _session_payload(session)
 
 
 @app.get("/api/bootstrap")
@@ -94,6 +124,7 @@ def analyze_fixture(request: FixtureRequest) -> dict:
             "cycle_label": fixture["cycle_label"],
             "description": fixture["description"],
         },
+        label=request.label,
     )
 
 
@@ -102,12 +133,14 @@ async def analyze_upload(
     files: list[UploadFile] = File(...),
     card_id: Optional[str] = Form(None),
     wallet: Optional[str] = Form(None),
+    label: Optional[str] = Form(None),
 ) -> dict:
-    """Parse one or more unlocked PDF e-statements.
+    """Parse one or more unlocked PDF e-statements into one month.
 
     `card_id` forces the card for every uploaded file; otherwise the issuer is
     detected from the statement header. `wallet` is a comma-separated list of
-    the cards the user holds.
+    the cards the user holds. `label` names the month; it defaults to the
+    period covered by the transaction dates.
     """
     if card_id and card_id not in catalog.cards():
         raise HTTPException(status_code=422, detail=f"Unknown card '{card_id}'.")
@@ -145,9 +178,64 @@ async def analyze_upload(
         rows,
         wallet_ids,
         "pdf",
-        {"kind": "upload", "label": ", ".join(names), "cycle_label": "uploaded statement"},
+        {"kind": "upload", "label": ", ".join(names)},
         quality,
+        label=label,
     )
+
+
+# --- Months: every analysis is one month; keep several and switch between them ---
+
+
+@app.get("/api/months")
+def list_months() -> dict:
+    """All months held in memory, in statement-period order, with running totals."""
+    sessions = sorted(
+        store.list(),
+        key=lambda s: (s.result.payload.get("period", {}).get("key", ""), s.created_at),
+    )
+    months = [_month_summary(s) for s in sessions]
+    totals = {"total_spend": 0.0, "actual_rewards": 0.0, "optimal_rewards": 0.0,
+              "missed_value": 0.0, "transaction_count": 0}
+    for month in months:
+        for key in totals:
+            totals[key] += month["summary"][key]
+    for key in ("total_spend", "actual_rewards", "optimal_rewards", "missed_value"):
+        totals[key] = round(totals[key], 2)
+    spend = totals["total_spend"]
+    totals["actual_yield_pct"] = round(totals["actual_rewards"] / spend * 100, 2) if spend else 0.0
+    totals["optimal_yield_pct"] = round(totals["optimal_rewards"] / spend * 100, 2) if spend else 0.0
+    return {"months": months, "count": len(months), "totals": totals}
+
+
+@app.get("/api/months/{session_id}")
+def get_month(session_id: str) -> dict:
+    session = store.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="That month has expired. Add it again.")
+    return _session_payload(session)
+
+
+@app.patch("/api/months/{session_id}")
+def rename_month(session_id: str, update: MonthUpdate) -> dict:
+    if not update.label.strip():
+        raise HTTPException(status_code=422, detail="Give the month a non-empty name.")
+    session = store.rename(session_id, update.label)
+    if session is None:
+        raise HTTPException(status_code=404, detail="That month has expired. Add it again.")
+    return _month_summary(session)
+
+
+@app.delete("/api/months/{session_id}")
+def delete_month(session_id: str) -> dict:
+    return {"dropped": store.drop(session_id)}
+
+
+@app.delete("/api/months")
+def delete_all_months() -> dict:
+    count = len(store)
+    store.clear()
+    return {"dropped": count}
 
 
 @app.post("/api/advisor/{session_id}")
