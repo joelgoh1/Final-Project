@@ -5,9 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Card Reward &amp; Spend Optimizer</title>
 <script>
+  // Set both skin axes before first paint: no flash of the wrong palette or voice.
   (function () {
-    var saved = localStorage.getItem("theme");
-    document.documentElement.setAttribute("data-theme", saved || "light");
+    var d = document.documentElement;
+    d.setAttribute("data-theme", localStorage.getItem("theme") || "light");
+    if (localStorage.getItem("mode") === "mum") d.setAttribute("data-mode", "mum");
   })();
 </script>
 <link rel="stylesheet" href="/static/styles.css" />
@@ -17,12 +19,14 @@
   <div class="brand">
     <span class="mark">SG</span>
     <div>
-      <h1>Card Reward &amp; Spend Optimizer</h1>
-      <p>See the cashback your wallet left on the table last cycle.</p>
+      <h1 data-copy="app.title">Card Reward &amp; Spend Optimizer</h1>
+      <p data-copy="app.tagline">See the cashback your wallet left on the table last cycle.</p>
     </div>
   </div>
   <div class="topbar-right">
-    <p class="privacy-pill">No bank logins &middot; processed in memory &middot; nothing saved to disk</p>
+    <p class="privacy-pill" data-copy="privacy.pill">No bank logins &middot; processed in memory &middot; nothing saved to disk</p>
+    <button id="mum-toggle" class="theme-toggle" type="button" aria-pressed="false"
+            data-copy-aria="mum.toggle.aria" aria-label="Naggy Singaporean mum mode">Call Mum</button>
     <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode">Dark mode</button>
   </div>
 </header>
@@ -32,15 +36,15 @@
   <section id="start" class="card start">
     <div id="months-return" class="months-return" hidden>
       <p id="months-return-text" class="muted small"></p>
-      <button id="months-return-btn" class="btn ghost" type="button">Back to months</button>
+      <button id="months-return-btn" class="btn ghost" type="button" data-copy="months.back">Back to months</button>
     </div>
     <h2 id="start-title">Start with a demo statement</h2>
-    <p class="muted">One click to a full reward-leakage analysis. No file, no login, no account. Each statement you add becomes a month you can switch between and total up.</p>
+    <p class="muted" data-copy="start.blurb">One click to a full reward-leakage analysis. No file, no login, no account. Each statement you add becomes a month you can switch between and total up.</p>
     <div id="scenario-list" class="scenario-list"></div>
     <div class="actions">
       <button type="button" id="demo-run" class="btn">Analyze this statement</button>
       <details class="tune" id="tune">
-        <summary>Fine-tune</summary>
+        <summary data-copy="tune.summary">Fine-tune</summary>
         <p id="tune-fixed-note" class="muted small" hidden>This scenario is a fixed statement. Pick a generated one to change it.</p>
         <div class="tune-grid">
           <fieldset class="held-cards">
@@ -74,7 +78,7 @@
     </div>
 
     <details class="upload">
-      <summary>Or upload your own unlocked PDF e-statement</summary>
+      <summary data-copy="upload.summary">Or upload your own unlocked PDF e-statement</summary>
       <p class="muted small">
         DBS, OCBC and UOB digital e-statements. Unlocked files only &mdash; v1 does not handle
         password-protected or scanned statements. Names, addresses and card numbers are
@@ -94,10 +98,6 @@
         <p class="muted small">Tick these to see what the same spend would have earned on them. Cards found in the upload are always included.</p>
         <div id="held-cards"></div>
       </fieldset>
-      <label class="field">
-        <span>Name this month (optional)</span>
-        <input type="text" id="upload-label" maxlength="60" placeholder="e.g. Aug 2026" />
-      </label>
       <button id="upload-btn" class="btn secondary">Analyze upload</button>
       <p id="sample-hint" class="muted small"></p>
     </details>
@@ -125,7 +125,7 @@
     </nav>
 
     <section id="overview" class="card overview" hidden>
-      <h3>Across your months <span id="overview-count" class="tag"></span></h3>
+      <h3><span data-copy="section.overview">Across your months</span> <span id="overview-count" class="tag"></span></h3>
       <div class="table-scroll">
         <table id="overview-table">
           <thead><tr><th>Month</th><th>Source</th><th class="num">Spend</th><th class="num">Earned</th><th class="num">Optimal</th><th class="num">Missed</th><th class="num">Yield</th></tr></thead>
@@ -151,54 +151,54 @@
 
     <div id="verdict" class="verdict">
       <div class="verdict-main">
-        <p class="verdict-label">Left on the table this cycle</p>
+        <p class="verdict-label" data-copy="verdict.label">Left on the table this cycle</p>
         <strong id="kpi-missed" class="verdict-figure"></strong>
         <p id="verdict-lede" class="verdict-lede"></p>
         <p id="kpi-missed-sub" class="verdict-sub muted small"></p>
       </div>
       <div class="verdict-compare">
         <div class="compare-row">
-          <div class="compare-head"><span>What you earned</span><strong id="kpi-actual"></strong></div>
+          <div class="compare-head"><span data-copy="verdict.earned">What you earned</span><strong id="kpi-actual"></strong></div>
           <div class="bar-track"><div id="bar-actual" class="bar-fill inert"></div></div>
         </div>
         <div class="compare-row">
-          <div class="compare-head"><span>What it could have been</span><strong id="kpi-optimal" class="pos"></strong></div>
+          <div class="compare-head"><span data-copy="verdict.couldBe">What it could have been</span><strong id="kpi-optimal" class="pos"></strong></div>
           <div class="bar-track"><div id="bar-optimal" class="bar-fill"></div></div>
         </div>
-        <p class="verdict-note muted small">That upper figure re-routes every purchase perfectly, which nobody
+        <p class="verdict-note muted small" data-copy="verdict.note">That upper figure re-routes every purchase perfectly, which nobody
           manages in practice. The three rules below are the version you can actually follow.</p>
       </div>
     </div>
 
     <section class="card">
-      <h3>Three rules for next month <span class="tag">rules engine</span></h3>
+      <h3><span data-copy="section.rules">Three rules for next month</span> <span class="tag">rules engine</span></h3>
       <div id="wallet-rules" class="rules"></div>
     </section>
 
     <div class="grid">
       <section class="card">
-        <h3>Where the money went</h3>
+        <h3><span data-copy="section.categories">Where the money went</span></h3>
         <div id="category-bars" class="bars"></div>
       </section>
 
       <section class="card" id="strategist-card">
-        <h3>AI strategist &mdash; next cycle</h3>
+        <h3><span data-copy="section.strategist">AI strategist — next cycle</span></h3>
         <div id="advisor-body"></div>
       </section>
     </div>
 
     <section class="card">
-      <h3>Suboptimal transactions <span id="suboptimal-count" class="tag"></span></h3>
+      <h3><span data-copy="section.suboptimal">Suboptimal transactions</span> <span id="suboptimal-count" class="tag"></span></h3>
       <div class="table-scroll">
         <table id="suboptimal-table">
-          <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th class="num">Amount</th><th>Charged to</th><th>Better card</th><th class="num">Missed</th></tr></thead>
+          <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th class="num">Amount</th><th data-copy="th.chargedTo">Charged to</th><th data-copy="th.betterCard">Better card</th><th class="num" data-copy="th.missed">Missed</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
     </section>
 
     <section class="card">
-      <h3>Cards this cycle</h3>
+      <h3><span data-copy="section.cards">Cards this cycle</span></h3>
       <div class="table-scroll">
         <table id="cards-table">
           <thead><tr><th>Card</th><th class="num">Spend</th><th class="num">Earned</th><th>Min spend</th><th>Cap</th><th class="num">If optimised</th></tr></thead>
@@ -208,15 +208,23 @@
     </section>
 
     <details class="card disclosure">
-      <summary>How these numbers were produced <span id="parse-quality" class="tag"></span></summary>
+      <summary><span data-copy="section.method">How these numbers were produced</span> <span id="parse-quality" class="tag"></span></summary>
       <ul id="assumptions"></ul>
     </details>
   </section>
 </main>
 
+<script src="/static/copy.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/demo.js"></script>
 <script src="/static/strategist.js"></script>
-<script src="/static/demo.js"></script>
+<script type="module">
+  // fx.js is an ES module; the scripts above are classic and share window
+  // globals. Publish it on window so they can reach it without converting.
+  // Module scripts are deferred, so this runs before DOMContentLoaded.
+  import * as fx from "/static/fx.js";
+  window.fx = fx;
+  document.dispatchEvent(new CustomEvent("fx-ready"));
+</script>
 </body>
 </html>

@@ -35,16 +35,12 @@
   style.textContent = STYLE;
   document.head.appendChild(style);
 
-  const PROMPTS = [
-    "Why not put dining on the 6% card?",
-    "I don't want to use OCBC at all.",
-    "Give me a 2-rule version.",
-    "Which rule is most likely to break?",
-  ];
+  // Read per render, not once: the persona can change between mounts.
+  const prompts = () => window.CopyText.t("chat.chips");
 
   const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = (n) => "$" + Number(n || 0).toFixed(2);
-  const chat = { history: [], sessionId: null, busy: false };
+  const chat = { history: [], sessionId: null, sessionKey: null, busy: false };
 
   function currentSessionId() {
     return (window.state && state.session && state.session.session_id) || null;
@@ -90,12 +86,14 @@
     const log = chat.history
       .map((m) => `<div class="bubble ${m.role === "user" ? "user" : "assistant"}">${esc(m.text)}</div>`)
       .join("");
-    return `<details open><summary>Talk to the strategist</summary>
-      <div class="chips">${PROMPTS.map((p) => `<button type="button" data-prompt="${esc(p)}">${esc(p)}</button>`).join("")}</div>
-      <div class="chat-log" id="chat-log">${log || '<div class="bubble meta">Push back, complain, or ask why. If it changes its mind, the plan above updates - engine-verified.</div>'}</div>
+    const T = window.CopyText;
+    const empty = `<div class="bubble meta">${esc(T.t("chat.empty"))}</div>`;
+    return `<details open><summary>${esc(T.t("chat.title"))}</summary>
+      <div class="chips">${prompts().map((p) => `<button type="button" data-prompt="${esc(p)}">${esc(p)}</button>`).join("")}</div>
+      <div class="chat-log" id="chat-log">${log || empty}</div>
       <form class="chat-row" id="chat-form">
-        <input id="chat-input" type="text" maxlength="2000" placeholder="e.g. I never carry the OCBC card - re-plan without it" autocomplete="off" />
-        <button class="btn secondary" type="submit" id="chat-send">Send</button>
+        <input id="chat-input" type="text" maxlength="2000" placeholder="${esc(T.t("chat.placeholder"))}" autocomplete="off" />
+        <button class="btn secondary" type="submit" id="chat-send">${esc(T.t("chat.send"))}</button>
       </form></details>`;
   }
 
@@ -103,7 +101,9 @@
     const body = document.getElementById("advisor-body");
     if (!body || advisor.mode !== "agent") return;
     const sid = currentSessionId();
-    if (sid !== chat.sessionId) {
+    const key = `${sid}:${window.CopyText.currentPersona()}`;
+    if (key !== chat.sessionKey) {
+      chat.sessionKey = key;
       chat.sessionId = sid;
       chat.history = [];
     }
@@ -134,7 +134,7 @@
     if (chat.busy || !chat.sessionId) return;
     chat.busy = true;
     const log = document.getElementById("chat-log");
-    log.insertAdjacentHTML("beforeend", `<div class="bubble user">${esc(text)}</div><div class="bubble meta" id="chat-wait">strategist is checking the engine…</div>`);
+    log.insertAdjacentHTML("beforeend", `<div class="bubble user">${esc(text)}</div><div class="bubble meta" id="chat-wait">${esc(window.CopyText.t("chat.waiting"))}</div>`);
     log.scrollTop = log.scrollHeight;
     document.getElementById("chat-send").disabled = true;
     document.getElementById("chat-input").disabled = true;
@@ -142,7 +142,7 @@
       const response = await fetch(`/api/advisor/${chat.sessionId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, persona: window.CopyText.currentPersona() }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "The strategist could not answer.");

@@ -80,6 +80,19 @@ function initDemoPanel(boot) {
   loadScenario(demo.scenarios[0]);
 }
 
+/* Re-apply persona wording to the controls demo.js owns. Called by toggleMum in
+   app.js, since these labels are built in JS rather than carried by data-copy. */
+function renderScenarioCopy() {
+  if (!demo.scenarios.length) return;
+  const scenario = selectedScenario();
+  const fixed = scenario.kind === "fixture";
+  $("demo-run").textContent = CopyText.t(fixed ? "demo.run.fixed" : "demo.run.generated");
+  if (!fixed) {
+    syncHabitOptions($("tune-habit").value);
+    refreshTune();
+  }
+}
+
 function selectedScenario() {
   const picked = document.querySelector('input[name="scenario"]:checked');
   return demo.scenarios.find((s) => s.id === (picked ? picked.value : "")) || demo.scenarios[0];
@@ -91,7 +104,7 @@ function loadScenario(scenario) {
   $("tune").classList.toggle("dimmed", fixed);
   $("tune").querySelectorAll("input, select").forEach((el) => (el.disabled = fixed));
   $("tune-fixed-note").hidden = !fixed;
-  $("demo-run").textContent = fixed ? "Analyze this statement" : "Generate & analyze";
+  $("demo-run").textContent = CopyText.t(fixed ? "demo.run.fixed" : "demo.run.generated");
   if (fixed) {
     $("tune-summary").textContent = "";
     return;
@@ -122,11 +135,11 @@ function syncHabitOptions(preferred) {
   const wallet = selectedWallet();
   const name = (id) => (demo.cards.find((c) => c.id === id) || { name: id }).name;
   const options = [
-    ["spread", "Spread at random across the wallet"],
-    ["best_rate", "Best-rate card for each purchase"],
+    ["spread", CopyText.t("habit.spread")],
+    ["best_rate", CopyText.t("habit.bestRate")],
   ];
-  wallet.forEach((id) => options.push([`primary:${id}`, `Everything on ${name(id)}`]));
-  wallet.forEach((id) => options.push([`habit:${id}`, `Mostly ${name(id)}, some spillover`]));
+  wallet.forEach((id) => options.push([`primary:${id}`, CopyText.fmt("habit.primary", name(id))]));
+  wallet.forEach((id) => options.push([`habit:${id}`, CopyText.fmt("habit.mostly", name(id))]));
   select.innerHTML = options
     .map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`)
     .join("");
@@ -170,15 +183,13 @@ function refreshTune() {
   });
 
   const problems = [];
-  if (!config.wallet.length) problems.push("Pick at least one card.");
-  if (total <= 0) problems.push("Give at least one category some weight.");
+  if (!config.wallet.length) problems.push(CopyText.t("error.pickCard"));
+  if (total <= 0) problems.push(CopyText.t("error.pickWeight"));
   $("demo-run").disabled = problems.length > 0;
   $("tune-problems").textContent = problems.join(" ");
 
   const names = config.wallet.map((id) => (demo.cards.find((c) => c.id === id) || { name: id }).name);
-  $("tune-summary").textContent =
-    `${config.transaction_count} transactions, about $${config.total_spend.toLocaleString()} ` +
-    `on ${names.join(", ") || "no cards"}.`;
+  $("tune-summary").textContent = CopyText.fmt("tune.summaryLine", config, names);
 }
 
 async function runScenario() {
