@@ -31,7 +31,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Sequence
 
-from . import catalog
+from . import catalog, persona as persona_module
 from .models import CardProfile, Transaction
 from .rules_engine import Allocation, allocate_optimal, best_rule_plan, score_actual, score_strategy
 
@@ -143,6 +143,7 @@ class AdvisorResult:
     model: str = ""
     provider: str = ""
     path: str = ""  # "tool-loop" or "single-shot"
+    persona: str = persona_module.DEFAULT_PERSONA  # voice only; never affects numbers
     detail: str = ""
     trace: list[dict] = field(default_factory=list)  # one entry per model turn
     best_engine_plan: Optional[dict] = None  # exhaustive baseline the plan is judged against
@@ -173,6 +174,7 @@ class AdvisorResult:
             "model": self.model,
             "provider": self.provider,
             "path": self.path,
+            "persona": self.persona,
             "detail": self.detail,
         }
 
@@ -698,16 +700,25 @@ def run_advisor(
     wallet: Sequence[CardProfile],
     dashboard: dict,
     client: Optional[ChatClient] = None,
+    persona: str = persona_module.DEFAULT_PERSONA,
 ) -> AdvisorResult:
     """Run the agent and return an engine-verified recommendation.
 
     `client` can be injected for tests; by default one is built from .env.
+    `persona` only changes the voice of the prose fields - never the schema,
+    never a number (the engine re-scores the plan regardless).
     """
     cfg = settings()
     if client is None:
         status = advisor_status()
         if not status["available"]:
-            return AdvisorResult(mode="unavailable", detail=status["reason"], model=cfg["model"], provider=cfg["base_url"])
+            return AdvisorResult(
+                mode="unavailable",
+                detail=status["reason"],
+                model=cfg["model"],
+                provider=cfg["base_url"],
+                persona=persona_module.resolve(persona),
+            )
         client = ChatClient(cfg["api_key"], cfg["base_url"], cfg["model"], reasoning_effort=cfg["reasoning_effort"])
     model = getattr(client, "model", cfg["model"])
     provider = getattr(client, "base_url", cfg["base_url"])
@@ -726,7 +737,7 @@ def run_advisor(
     tool_loop_error = ""
     trace: list[dict] = []
     try:
-        answer = _run_tool_loop(client, specs, impls, seed=seed, trace=trace)
+        answer = _run_tool_loop(client, specs, impls, seed=seed, trace=trace, persona=persona)
         tested.extend(candidates)
     except Exception as exc:  # noqa: BLE001 - fall through to the single-shot path
         tool_loop_error = f"{type(exc).__name__}: {exc}"
@@ -736,13 +747,20 @@ def run_advisor(
         # request with engine-precomputed candidates and no tools.
         path = "single-shot"
         try:
-            answer = _run_single_shot(client, transactions, wallet, dashboard, candidates)
+            answer = _run_single_shot(client, transactions, wallet, dashboard, candidates, persona=persona)
             tested.extend(candidates)
         except Exception as exc:  # noqa: BLE001 - keep the dashboard usable
             detail = f"{type(exc).__name__}: {exc}"
             if tool_loop_error:
                 detail = f"tool loop: {tool_loop_error}; single-shot: {detail}"
-            return AdvisorResult(mode="error", detail=detail, model=model, provider=provider, path=path)
+            return AdvisorResult(
+                mode="error",
+                detail=detail,
+                model=model,
+                provider=provider,
+                path=path,
+                persona=persona_module.resolve(persona),
+            )
 
     if answer is None:
         return AdvisorResult(
@@ -751,11 +769,13 @@ def run_advisor(
             model=model,
             provider=provider,
             path=path,
+            persona=persona_module.resolve(persona),
             strategies_tested=len(tested),
         )
 
     result = verify(answer, transactions, wallet, len(tested))
     result.model, result.provider, result.path, result.trace = model, provider, path, trace
+    result.persona = persona_module.resolve(persona)
     # Transparency: the engine's exhaustive optimum is a known baseline. If the
     # model recommends something weaker, say so instead of hiding it.
     best_baseline = max(candidates, key=lambda c: c["total_reward"])
@@ -782,6 +802,7 @@ def _run_tool_loop(
     impls: dict[str, Callable[[dict], str]],
     seed: Optional[dict] = None,
     trace: Optional[list[dict]] = None,
+    persona: str = persona_module.DEFAULT_PERSONA,
 ) -> Optional[dict]:
     """Function-calling loop: call tools until the model answers in JSON.
 
@@ -801,7 +822,7 @@ def _run_tool_loop(
     if seed is not None:
         brief += "\n\nContext (JSON):\n" + json.dumps(seed)
     messages: list[dict] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": persona_module.with_voice(SYSTEM_PROMPT, persona, "system")},
         {"role": "user", "content": brief},
     ]
     exploration_rounds = 0
@@ -901,7 +922,14 @@ def _summarise_tool_output(output: str) -> dict:
     return summary or {"keys": sorted(data)}
 
 
-def _run_single_shot(client: ChatClient, transactions, wallet, dashboard, candidates: list[dict]) -> Optional[dict]:
+def _run_single_shot(
+    client: ChatClient,
+    transactions,
+    wallet,
+    dashboard,
+    candidates: list[dict],
+    persona: str = persona_module.DEFAULT_PERSONA,
+) -> Optional[dict]:
     """One plain request, no tools: the model reasons over engine-scored candidates."""
     cards = _cards_for(wallet)
     context = {
@@ -914,7 +942,7 @@ def _run_single_shot(client: ChatClient, transactions, wallet, dashboard, candid
         "transactions": _rows_payload(transactions, cards),
     }
     messages = [
-        {"role": "system", "content": SINGLE_SHOT_PROMPT},
+        {"role": "system", "content": persona_module.with_voice(SINGLE_SHOT_PROMPT, persona, "single_shot")},
         {"role": "user", "content": "Statement context (JSON):\n" + json.dumps(context) + "\n\nReturn the JSON answer now."},
     ]
     try:
@@ -1056,6 +1084,7 @@ def chat_with_strategist(
     history: Sequence[dict],
     user_message: str,
     client: Optional[ChatClient] = None,
+    persona: str = persona_module.DEFAULT_PERSONA,
 ) -> dict:
     """One conversational turn with the strategist.
 
@@ -1077,7 +1106,7 @@ def chat_with_strategist(
     seed = build_seed(transactions, wallet, dashboard, impls, candidates)
 
     messages: list[dict] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": persona_module.with_voice(SYSTEM_PROMPT, persona, "system")},
         {
             "role": "user",
             "content": "Statement context (JSON) - card rules, spend summary and engine-scored baselines:\n"
@@ -1088,7 +1117,8 @@ def chat_with_strategist(
     for turn in list(history)[-MAX_CHAT_HISTORY:]:
         role = "assistant" if turn.get("role") == "assistant" else "user"
         messages.append({"role": role, "content": str(turn.get("text", ""))[:4000]})
-    messages.append({"role": "user", "content": f"{user_message.strip()}\n\n{CHAT_INSTRUCTIONS}"})
+    chat_instructions = persona_module.with_voice(CHAT_INSTRUCTIONS, persona, "chat")
+    messages.append({"role": "user", "content": f"{user_message.strip()}\n\n{chat_instructions}"})
 
     trace: list[dict] = []
     try:
@@ -1107,6 +1137,7 @@ def chat_with_strategist(
             "chat",
             trace,
         )
+        verified.persona = persona_module.resolve(persona)
         best = max(candidates, key=lambda c: c["total_reward"])
         verified.best_engine_plan = {
             "label": best["label"],

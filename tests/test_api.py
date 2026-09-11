@@ -400,8 +400,8 @@ def test_chat_route_persists_history_and_updates_the_plan(client, monkeypatch):
     session = store.put(_analyze(raw["transactions"], raw["wallet"]))
     calls = []
 
-    def fake_chat(transactions, wallet, dashboard, prior, history, message, client=None):
-        calls.append({"prior": prior, "history": list(history), "message": message})
+    def fake_chat(transactions, wallet, dashboard, prior, history, message, client=None, persona="analyst"):
+        calls.append({"prior": prior, "history": list(history), "message": message, "persona": persona})
         plan = None
         if "simpler" in message:
             plan = {"mode": "agent", "headline": "Simpler.", "rules": [], "verified_rewards": 1.0, "trace": [{"turn": 1}], "watch_outs": [], "reasoning_summary": "", "default_card_id": "", "default_card_name": ""}

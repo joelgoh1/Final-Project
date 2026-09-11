@@ -8,10 +8,13 @@ the engine, so the model can never argue from stale numbers.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from .advisor import chat_with_strategist
+from .persona import DEFAULT_PERSONA, PERSONAS
 from .session_store import store
 
 router = APIRouter()
@@ -22,6 +25,7 @@ MAX_STORED_TURNS = 40
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
+    persona: Literal[tuple(PERSONAS)] = DEFAULT_PERSONA  # type: ignore[valid-type]
 
 
 @router.get("/api/advisor/{session_id}/chat")
@@ -48,6 +52,7 @@ def chat(session_id: str, request: ChatRequest) -> dict:
         prior,
         history,
         request.message,
+        persona=request.persona,
     )
 
     if outcome["mode"] == "agent":
@@ -61,6 +66,9 @@ def chat(session_id: str, request: ChatRequest) -> dict:
                 dict(entry, turn=len(earlier) + index) for index, entry in enumerate(outcome["plan"]["trace"], 1)
             ]
             session.advisor = outcome["plan"]
+            # Keep the per-persona cache in step, so a later toggle does not
+            # resurrect a plan this conversation has already superseded.
+            session.extras.setdefault("advisor_plans", {})[request.persona] = outcome["plan"]
 
     return {
         "mode": outcome["mode"],
