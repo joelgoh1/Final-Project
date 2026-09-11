@@ -67,11 +67,30 @@ python tools/analyze_cli.py --fixture sg_multi_card_cycle \
 Sample unlocked PDFs for the upload path are in `samples/` (synthetic data; regenerate
 with `python tools/make_sample_pdfs.py`).
 
+### Configurable demo statements
+
+The two fixtures above are fixed so the numbers in the script never move. Next to them the
+start screen lists **generated** scenarios (3-card household, everything on one card,
+grocery-heavy family, online shopper, rate-chasing per purchase). Pick one and click
+**Generate & analyze**; open **Fine-tune** to change the cards in the wallet, the card habit
+(spread, one primary card, mostly one card, best-rate per purchase), the transaction count,
+total spend, category mix and the share of unfamiliar merchants. **Shuffle** draws a new seed;
+the same seed always reproduces the same statement, and the dashboard shows the seed it used.
+
+- Scenarios and defaults live in `data/demo_presets.json`; the merchant pool (with typical
+  SGD ranges per category) in `data/demo_merchants.json`. Tests check that every pooled
+  merchant categorizes to the category it is filed under.
+- API: `POST /api/analyze/demo` with `{"preset": "household_3_card", "seed": 3, ...}` - any
+  knob may be overridden; `/api/bootstrap` returns the presets, limits and card modes.
+- CLI: `python tools/analyze_cli.py --demo online_shopper --set mix.dining=50 --seed 9`, and
+  `--save-fixture path.json` freezes a generated statement as a regular fixture.
+
 ## What is in the box
 
 ```
 app/
-  main.py            FastAPI routes: bootstrap, analyze (fixture / upload), months CRUD, advisor, CSV
+  main.py            FastAPI routes: bootstrap, analyze (fixture / demo / upload), months CRUD, advisor, CSV
+  demo.py            seeded synthetic statement generator behind the configurable demo
   analysis.py        pipeline: redact -> categorize -> score actual -> allocate optimal -> payload
   rules_engine.py    pure reward maths: caps, minimum spends, optimal allocation, strategy scoring
   categorize.py      keyword rules with General Spend guardrail (never fails on an unknown merchant)
@@ -83,11 +102,13 @@ app/
   parsing/           pdfplumber text -> date / merchant / amount rows for DBS, OCBC, UOB layouts
 data/
   cards.json         card profiles + stated v1 assumptions (the only reward "API")
+  demo_presets.json  generated-demo scenarios and knob defaults
+  demo_merchants.json synthetic merchant pool per category for the generator
   merchant_rules.json
   fixtures/          two synthetic statement cycles
 samples/             three synthetic unlocked PDF e-statements
 tools/               analyze_cli.py, make_sample_pdfs.py
-web/                 one static page, no framework, no build step
+web/                 one static page (app.js + demo.js), no framework, no build step
 tests/               engine known-answer, categorizer, parser, API + stubbed advisor
 .claude/skills/card-reward-planner/   Claude Code skill: financial-planner workflow on top of the engine
 ```
