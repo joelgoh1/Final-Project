@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
 from . import catalog, demo
 from .config import load_dotenv
+from .persona import DEFAULT_PERSONA, PERSONAS
 
 load_dotenv()
 from .advisor import advisor_status, run_advisor
@@ -53,6 +54,16 @@ class DemoRequest(BaseModel):
     seed: Optional[int] = None
     custom_cards: Optional[list[CustomCard]] = None
     label: Optional[str] = None
+
+
+class AdvisorRequest(BaseModel):
+    """Optional body for the advisor run. `persona` picks a voice only.
+
+    Validated as an enum of known ids, so a client string can never become
+    prompt text - it selects a server-side constant by name.
+    """
+
+    persona: Literal[tuple(PERSONAS)] = DEFAULT_PERSONA  # type: ignore[valid-type]
 
 
 class MonthUpdate(BaseModel):
@@ -293,14 +304,29 @@ def delete_all_months() -> dict:
 
 
 @app.post("/api/advisor/{session_id}")
-def advisor(session_id: str) -> dict:
-    """Run the reasoning-model strategist over an existing analysis."""
+def advisor(session_id: str, request: Optional[AdvisorRequest] = Body(None)) -> dict:
+    """Run the reasoning-model strategist over an existing analysis.
+
+    Plans are cached per persona: the voice is a presentation choice, so
+    switching it must not serve the other persona's prose, and switching back
+    must not pay for a second model run.
+    """
     session = store.get(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session expired. Re-run the analysis.")
-    if session.advisor is None:
-        result = run_advisor(session.result.transactions, session.result.wallet, session.result.payload)
-        session.advisor = result.to_dict()
+    persona = request.persona if request else DEFAULT_PERSONA
+    plans: dict = session.extras.setdefault("advisor_plans", {})
+    if persona not in plans:
+        result = run_advisor(
+            session.result.transactions,
+            session.result.wallet,
+            session.result.payload,
+            persona=persona,
+        )
+        plans[persona] = result.to_dict()
+    # session.advisor stays the currently shown plan, so CSV export, the month
+    # summary's advisor_ran flag and the chat's prior plan all keep working.
+    session.advisor = plans[persona]
     return session.advisor
 
 

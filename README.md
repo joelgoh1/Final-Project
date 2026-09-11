@@ -27,6 +27,24 @@ you switch between them, rename or remove any month, and an *Across your months*
 totals spend, rewards and missed value once you hold two or more. Months live in memory
 only (30 minutes of inactivity each) and disappear when the process exits.
 
+### Naggy mum mode
+
+Click **Call Mum** in the top bar. The palette turns kopitiam-warm, every label
+is rewritten in Singlish, your wasted cashback is converted into plates of
+chicken rice, and the money rains down the screen.
+
+It is a voice, not a different analysis. The rules engine still produces every
+figure, and the strategist's persona only restyles its prose fields - the JSON
+contract, the card ids and the engine-verified numbers are untouched, so a
+statement reads identically in either voice. `data-mode` is a separate
+attribute from `data-theme`, so mum mode composes with dark mode; both persist
+in `localStorage`.
+
+Both advisor endpoints take an optional `persona` (`"analyst"` by default, or
+`"mum"`), validated against a whitelist so the field can never inject prompt
+text. Plans are cached per persona, so toggling back and forth costs no extra
+model calls.
+
 The AI strategist needs an OpenCode key. Copy `.env.example` to `.env` and set
 `OPENCODE_API_KEY`. Without it the app runs fully local - the dashboard, CSV export and
 rules-engine cheat sheet are unaffected; the strategist card simply says it is unavailable.

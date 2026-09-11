@@ -25,6 +25,7 @@
   --good-line: #ccdaf8;
   --neutral-bar: #bcb5a9;
   --spinner: #e4e0d9;
+  --font-body-default: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --radius: 16px;
   --radius-sm: 12px;
   --shadow: 0 1px 2px rgba(48, 40, 34, .035), 0 3px 10px rgba(48, 40, 34, .035);
@@ -85,7 +86,7 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-body, var(--font-body-default));
   background: var(--bg);
   color: var(--ink);
   line-height: 1.45;
@@ -300,3 +301,115 @@ td.missed { color: var(--warn); font-weight: 600; }
 .overview tr.active td:first-child { color: var(--brand); font-weight: 600; }
 .overview tbody tr { cursor: pointer; }
 .overview tbody tr:hover td { background: var(--track); }
+
+/* ------------------------------------------------------------------ mum mode
+   An independent skin that composes with either theme, so all four
+   data-theme x data-mode combinations work.
+
+   Specificity note, and the reason these are not bare [data-mode] selectors:
+   the prefers-dark block above is `:root:not([data-theme="light"])` = (0,2,0),
+   which would BEAT a bare `[data-mode="mum"]` = (0,1,0). `:root[data-mode]`
+   ties at (0,2,0) and wins on source order; the dark pair is (0,3,0).
+
+   Only two palette copies are needed, not three: index.html always writes an
+   explicit data-theme before first paint, so the media-query block never
+   matches while JS is on - and mum mode requires JS anyway.
+
+   --good stays blue/teal deliberately. See the note at the top of this file:
+   the red/blue pairing survives red-green colour blindness. Mum mode shifts
+   the hue but keeps the two ends distinguishable. */
+:root[data-mode="mum"] {
+  --bg: #fff4e2;              /* kopitiam melamine */
+  --surface: #fffaf0;
+  --surface-2: #ffe9c9;
+  --ink: #3a1f12;
+  --muted: #80512f;
+  --line: #f0c48a;
+  --track: #f6d9ae;
+  --brand: #b3164f;           /* auntie hot pink */
+  --brand-soft: #ffe0ec;
+  --brand-line: #f7b6cf;
+  --on-brand: #fffaf0;
+  --warn: #b23309;            /* chilli */
+  --warn-deep: #8d2605;
+  --warn-soft: #ffd9c7;
+  --warn-surface: #fff0e4;
+  --warn-line: #f7b593;
+  --good: #0d5f79;            /* teal - still not green */
+  --good-soft: #d9f1f8;
+  --good-line: #a8dbe8;
+  --neutral-bar: #c2925f;
+  --spinner: #f0c48a;
+  --shadow: 0 2px 0 #e8a13c, 0 6px 18px rgba(120, 60, 10, .18);
+  --font-display: "Comic Sans MS", "Chalkboard SE", "Segoe Print", "Bradley Hand", var(--font-body-default);
+}
+:root[data-theme="dark"][data-mode="mum"] {
+  --bg: #241108;
+  --surface: #32190c;
+  --surface-2: #3f2211;
+  --ink: #ffeede;
+  --muted: #d0a486;
+  --line: #5a3218;
+  --track: #4a2812;
+  --brand: #ff8fb3;
+  --brand-soft: #4a1c2d;
+  --brand-line: #7a2f48;
+  --on-brand: #241108;
+  --warn: #ff9269;
+  --warn-deep: #ffb190;
+  --warn-soft: #5c2410;
+  --warn-surface: #3e1a0c;
+  --warn-line: #7d3a1c;
+  --good: #6fd3ec;
+  --good-soft: #10353f;
+  --good-line: #1d5768;
+  --neutral-bar: #7a5638;
+  --spinner: #5a3218;
+  --shadow: 0 2px 0 #8a4a12, 0 6px 18px rgba(0, 0, 0, .40);
+}
+
+/* A handwritten face only where it is fun - never on the tables or body text.
+   No webfont on purpose: there is no build step, and a CDN link would
+   contradict the privacy pill's "nothing leaves your machine". */
+[data-mode="mum"] h1,
+[data-mode="mum"] .verdict-figure,
+[data-mode="mum"] .verdict-label,
+[data-mode="mum"] .rule .amount { font-family: var(--font-display); }
+[data-mode="mum"] .verdict { border-style: dashed; border-width: 2px; }
+[data-mode="mum"] .verdict-figure { text-shadow: 2px 2px 0 var(--warn-soft); }
+[data-mode="mum"] .mark::after { content: " \2764"; }
+#mum-toggle[aria-pressed="true"] {
+  background: var(--brand); color: var(--on-brand); border-color: var(--brand);
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-mode="mum"] .verdict { transform: rotate(-.35deg); }
+  #mum-toggle { animation: nag 2.6s ease-in-out infinite; }
+  @keyframes nag {
+    0%, 92%, 100% { transform: none; }
+    95% { transform: rotate(-3deg) scale(1.04); }
+  }
+}
+
+/* ---- fx layer, required by web/fx.js.
+   fx.js creates #fx-layer and #money-cursor and toggles .fun-cursor on <html>;
+   none of those selectors existed here before. Nothing else in this file uses
+   z-index or position:fixed, so there is no stacking context to fight. */
+#fx-layer { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
+#money-cursor {
+  position: fixed; top: 0; left: 0; width: 64px; height: 44px;
+  pointer-events: none; z-index: 61; opacity: 0;
+  transition: opacity .15s ease; will-change: transform;
+}
+/* fx.js only enables this for a fine pointer with motion allowed, so the real
+   cursor is never taken away on touch or from reduced-motion users. */
+html.fun-cursor, html.fun-cursor * { cursor: none; }
+#money-cursor .wing {
+  transform-box: fill-box; animation: flap .3s ease-in-out infinite alternate;
+}
+#money-cursor.fast .wing { animation-duration: .12s; }
+#money-cursor .note {
+  transform-box: fill-box; transform-origin: center; transition: transform .08s ease;
+}
+#money-cursor.press .note { transform: scale(.86); }
+@keyframes flap { from { transform: rotate(-14deg); } to { transform: rotate(22deg); } }
+@media (prefers-reduced-motion: reduce) { #money-cursor .wing { animation: none; } }
