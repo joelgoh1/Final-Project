@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Card Reward &amp; Spend Optimizer</title>
+<script>
+  (function () {
+    var saved = localStorage.getItem("theme");
+    document.documentElement.setAttribute("data-theme", saved || "dark");
+  })();
+</script>
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">SG</span>
+    <div>
+      <h1>Card Reward &amp; Spend Optimizer</h1>
+      <p>See the cashback your wallet left on the table last cycle.</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <p class="privacy-pill">No bank logins &middot; processed in memory &middot; nothing saved to disk</p>
+    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode">Light mode</button>
+  </div>
+</header>
+
+<main>
+  <!-- SCREEN 1: the key user flow starts here -->
+  <section id="start" class="card start">
+    <h2>Start with a demo statement</h2>
+    <p class="muted">One click to a full reward-leakage analysis. No file, no login, no account.</p>
+    <div id="fixture-list" class="fixture-list"></div>
+
+    <details class="upload">
+      <summary>Or upload your own unlocked PDF e-statement</summary>
+      <p class="muted small">
+        DBS, OCBC and UOB digital e-statements. Unlocked files only &mdash; v1 does not handle
+        password-protected or scanned statements. Names, addresses and card numbers are
+        stripped the moment the text is read.
+      </p>
+      <input type="file" id="file-input" accept="application/pdf" multiple />
+      <label class="field">
+        <span>Card for these statements</span>
+        <select id="card-override"><option value="">Detect from the statement header</option></select>
+      </label>
+      <fieldset class="held-cards">
+        <legend>Other cards you hold (optional)</legend>
+        <p class="muted small">Tick these to see what the same spend would have earned on them. Cards found in the upload are always included.</p>
+        <div id="held-cards"></div>
+      </fieldset>
+      <button id="upload-btn" class="btn secondary">Analyze upload</button>
+      <p id="sample-hint" class="muted small"></p>
+    </details>
+
+    <div class="advisor-toggle">
+      <label>
+        <input type="checkbox" id="advisor-enabled" checked />
+        <span><strong>AI strategist</strong> &mdash; a reasoning agent (via OpenCode) plans next month's wallet</span>
+      </label>
+      <p id="advisor-note" class="muted small"></p>
+    </div>
+
+    <div id="wallet-preview" class="wallet-preview"></div>
+    <p id="start-error" class="error" hidden></p>
+  </section>
+
+  <!-- SCREEN 2: the dashboard -->
+  <section id="dashboard" hidden>
+    <div class="source-line">
+      <div>
+        <h2 id="source-label"></h2>
+        <p class="muted small" id="source-meta"></p>
+      </div>
+      <div class="source-actions">
+        <a id="csv-link" class="btn secondary" href="#">Download CSV audit</a>
+        <button id="reset-btn" class="btn ghost">Clear session</button>
+      </div>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi"><span class="kpi-label">Total spend</span><strong id="kpi-spend"></strong><span class="kpi-sub" id="kpi-count"></span></div>
+      <div class="kpi"><span class="kpi-label">Rewards earned</span><strong id="kpi-actual"></strong><span class="kpi-sub" id="kpi-actual-yield"></span></div>
+      <div class="kpi"><span class="kpi-label">Optimal card yield</span><strong id="kpi-optimal"></strong><span class="kpi-sub" id="kpi-optimal-yield"></span></div>
+      <div class="kpi headline"><span class="kpi-label">Missed this cycle</span><strong id="kpi-missed"></strong><span class="kpi-sub" id="kpi-missed-sub"></span></div>
+    </div>
+
+    <div class="grid">
+      <section class="card">
+        <h3>Where the money went</h3>
+        <div id="category-bars" class="bars"></div>
+      </section>
+
+      <section class="card" id="strategist-card">
+        <h3>AI strategist &mdash; next cycle</h3>
+        <div id="advisor-body"></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h3>Wallet cheat sheet <span class="tag">rules engine</span></h3>
+      <div id="wallet-rules" class="rules"></div>
+    </section>
+
+    <section class="card">
+      <h3>Suboptimal transactions <span id="suboptimal-count" class="tag"></span></h3>
+      <div class="table-scroll">
+        <table id="suboptimal-table">
+          <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th class="num">Amount</th><th>Charged to</th><th>Better card</th><th class="num">Missed</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Cards this cycle</h3>
+      <div class="table-scroll">
+        <table id="cards-table">
+          <thead><tr><th>Card</th><th class="num">Spend</th><th class="num">Earned</th><th>Min spend</th><th>Cap</th><th class="num">If optimised</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <details class="card disclosure">
+      <summary>How these numbers were produced <span id="parse-quality" class="tag"></span></summary>
+      <ul id="assumptions"></ul>
+    </details>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

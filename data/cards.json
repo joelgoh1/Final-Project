@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "currency": "SGD",
+  "cycle": "monthly",
+  "global_assumptions": [
+    "All rates are modelled as monthly cashback on a single statement cycle.",
+    "Base-rate cashback is not counted against a card's monthly cap.",
+    "Once a card's bonus cap is reached, further spend on that card earns its base rate.",
+    "If a card's total cycle spend is below its minimum spend, every category falls back to the base rate."
+  ],
+  "cards": [
+    {
+      "id": "dbs_live_fresh",
+      "name": "DBS Live Fresh",
+      "issuer": "DBS",
+      "reward_unit": "cashback",
+      "base_rate": 0.003,
+      "category_rates": { "shopping": 0.05, "dining": 0.05, "transport": 0.05 },
+      "min_spend": 600.0,
+      "monthly_cap": 20.0,
+      "assumptions": [
+        "Models the 5% online/contactless tier as a flat 5% on Shopping, Dining and Transport.",
+        "Single $20 monthly bonus cap (the real card splits its cap across tiers)."
+      ]
+    },
+    {
+      "id": "uob_one",
+      "name": "UOB One Card",
+      "issuer": "UOB",
+      "reward_unit": "cashback",
+      "base_rate": 0.0033,
+      "category_rates": { "groceries": 0.10, "transport": 0.06, "utilities": 0.06, "dining": 0.04 },
+      "min_spend": 500.0,
+      "monthly_cap": 50.0,
+      "assumptions": [
+        "The real card pays a quarterly rebate on quarterly spend bands; v1 approximates it as a monthly minimum spend of $500 with flat category rates.",
+        "Monthly bonus cap set to $50 (a third of the quarterly rebate band)."
+      ]
+    },
+    {
+      "id": "ocbc_365",
+      "name": "OCBC 365",
+      "issuer": "OCBC",
+      "reward_unit": "cashback",
+      "base_rate": 0.003,
+      "category_rates": { "dining": 0.06, "groceries": 0.03, "transport": 0.03, "utilities": 0.03 },
+      "min_spend": 800.0,
+      "monthly_cap": 80.0,
+      "assumptions": [
+        "Weekday/weekend dining rates are modelled as a single 6% dining rate.",
+        "Per-category sub-caps are modelled as one $80 monthly cap."
+      ]
+    },
+    {
+      "id": "flat_cashback_card",
+      "name": "Flat 1.5% Cashback Card",
+      "issuer": "Any",
+      "reward_unit": "cashback",
+      "base_rate": 0.015,
+      "category_rates": {},
+      "min_spend": 0.0,
+      "monthly_cap": null,
+      "assumptions": [
+        "Unconditional 1.5% on all spend, no minimum spend and no cap. Acts as the fallback card in the wallet."
+      ]
+    }
+  ]
+}

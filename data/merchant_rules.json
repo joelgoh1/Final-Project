@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "fallback_category": "general_spend",
+  "categories": {
+    "dining": "Dining",
+    "groceries": "Groceries",
+    "transport": "Transport",
+    "shopping": "Shopping",
+    "utilities": "Utilities",
+    "general_spend": "General Spend"
+  },
+  "rules": [
+    { "id": "dining_fastfood", "category": "dining", "keywords": ["mcdonald", "kfc", "burger king", "subway", "jollibee", "texas chicken", "mos burger"] },
+    { "id": "dining_cafe", "category": "dining", "keywords": ["starbucks", "coffee bean", "toast box", "ya kun", "cedele", "tiong bahru bakery", "% arabica", "fun toast"] },
+    { "id": "dining_restaurant", "category": "dining", "keywords": ["restaurant", "eatery", "bistro", "kopitiam", "food court", "hawker", "din tai fung", "crystal jade", "paradise dynasty", "swee choon", "koufu", "food republic", "pastamania", "genki sushi", "sushi tei", "haidilao", "nando", "nandos", "canteen"] },
+    { "id": "dining_delivery", "category": "dining", "keywords": ["grabfood", "foodpanda", "deliveroo", "wolt"] },
+    { "id": "groceries_supermarket", "category": "groceries", "keywords": ["ntuc", "fairprice", "cold storage", "giant", "sheng siong", "prime supermarket", "u stars", "mustafa", "don don donki", "ryan's grocery", "little farms", "cs fresh"] },
+    { "id": "groceries_online", "category": "groceries", "keywords": ["redmart", "amazon fresh", "grabmart", "pandamart"] },
+    { "id": "transport_rail_bus", "category": "transport", "keywords": ["simplygo", "transitlink", "ez-link", "ezlink", "smrt", "sbs transit", "bus interchange"] },
+    { "id": "transport_ride_hailing", "category": "transport", "keywords": ["grab rides", "grab transport", "gojek", "tada", "comfortdelgro", "comfort taxi", "cdg zig", "zig", "trans-cab", "premier taxi"] },
+    { "id": "transport_fuel_parking", "category": "transport", "keywords": ["esso", "shell", "spc", "caltex", "sinopec", "hdb carpark", "ura parking", "wilson parking", "season parking", "erp"] },
+    { "id": "utilities_power_water", "category": "utilities", "keywords": ["sp services", "sp group", "geneco", "senoko", "keppel electric", "tuas power", "sembcorp power", "pub"] },
+    { "id": "utilities_telco", "category": "utilities", "keywords": ["singtel", "starhub", "m1", "simba", "myrepublic", "circles.life", "viewqwest"] },
+    { "id": "utilities_insurance_bill", "category": "utilities", "keywords": ["giro bill", "town council", "conservancy"] },
+    { "id": "shopping_marketplace", "category": "shopping", "keywords": ["shopee", "lazada", "amazon.sg", "amazon sg", "qoo10", "taobao", "carousell", "zalora", "alibaba"] },
+    { "id": "shopping_retail", "category": "shopping", "keywords": ["uniqlo", "zara", "h&m", "cotton on", "muji", "decathlon", "courts", "harvey norman", "challenger", "best denki", "ikea", "watsons", "guardian", "sephora", "apple store", "nike", "adidas", "popular bookstore", "kinokuniya", "takashimaya", "tangs", "metro dept"] },
+    { "id": "shopping_department", "category": "shopping", "keywords": ["shopping centre", "department store", "outlet mall"] }
+  ]
+}

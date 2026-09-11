@@ -1,0 +1,307 @@
+/* Card Reward & Spend Optimizer - single screen, no framework, no build step. */
+
+const $ = (id) => document.getElementById(id);
+const money = (n) => "$" + Number(n || 0).toFixed(2);
+const state = { session: null, advisorStatus: null };
+
+document.addEventListener("DOMContentLoaded", init);
+
+async function init() {
+  $("upload-btn").addEventListener("click", runUpload);
+  $("reset-btn").addEventListener("click", resetSession);
+  $("theme-toggle").addEventListener("click", toggleTheme);
+  syncThemeButton();
+
+  const boot = await fetch("/api/bootstrap").then((r) => r.json());
+  state.advisorStatus = boot.advisor_status;
+
+  $("fixture-list").innerHTML = "";
+  boot.fixtures.forEach((fixture, index) => {
+    const row = document.createElement("div");
+    row.className = "fixture";
+    row.innerHTML = `
+      <div>
+        <h4>${escapeHtml(fixture.label)}</h4>
+        <p>${escapeHtml(fixture.description)}</p>
+        <p>${fixture.transaction_count} transactions &middot; ${escapeHtml(fixture.cycle_label)}</p>
+      </div>`;
+    const button = document.createElement("button");
+    button.className = index === 0 ? "btn" : "btn secondary";
+    button.textContent = "Load demo fixture";
+    button.addEventListener("click", () => runFixture(fixture.id, button));
+    row.appendChild(button);
+    $("fixture-list").appendChild(row);
+  });
+
+  const select = $("card-override");
+  boot.cards.forEach((card) => {
+    const option = document.createElement("option");
+    option.value = card.id;
+    option.textContent = `${card.name} (${card.issuer})`;
+    select.appendChild(option);
+  });
+
+  $("held-cards").innerHTML = boot.cards
+    .map(
+      (card) =>
+        `<label class="held"><input type="checkbox" class="held-card" value="${escapeHtml(card.id)}" /> ${escapeHtml(card.name)}</label>`
+    )
+    .join("");
+
+  $("wallet-preview").innerHTML = boot.cards
+    .map((card) => {
+      const rates = Object.entries(card.headline_rates)
+        .map(([label, rate]) => `${label} ${rate}`)
+        .join(", ") || `flat ${card.base_rate_label}`;
+      return `<span class="chip"><strong>${escapeHtml(card.name)}</strong> &middot; ${escapeHtml(rates)}</span>`;
+    })
+    .join("");
+
+  if (boot.samples.length) {
+    $("sample-hint").textContent =
+      "Sample unlocked PDFs for testing live in the project's samples/ folder: " + boot.samples.join(", ");
+  }
+
+  const toggle = $("advisor-enabled");
+  if (!boot.advisor_status.available) {
+    toggle.checked = false;
+    toggle.disabled = true;
+    $("advisor-note").textContent = boot.advisor_status.reason +
+      " The dashboard below still works - the rules engine runs entirely on your machine.";
+  } else {
+    $("advisor-note").textContent =
+      `Model ${boot.advisor_status.model} via ${boot.advisor_status.provider}. Only redacted rows ` +
+      "(date, merchant, amount) are sent to the model - never names, addresses or card numbers. Untick to stay fully local.";
+  }
+}
+
+async function runFixture(fixtureId, button) {
+  await analyze(button, () =>
+    fetch("/api/analyze/fixture", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fixture_id: fixtureId }),
+    })
+  );
+}
+
+async function runUpload() {
+  const files = $("file-input").files;
+  if (!files || !files.length) {
+    showError("Choose at least one unlocked PDF e-statement first.");
+    return;
+  }
+  const form = new FormData();
+  Array.from(files).forEach((file) => form.append("files", file));
+  const cardId = $("card-override").value;
+  if (cardId) form.append("card_id", cardId);
+  const held = Array.from(document.querySelectorAll(".held-card:checked")).map((c) => c.value);
+  if (held.length) form.append("wallet", held.join(","));
+  await analyze($("upload-btn"), () => fetch("/api/analyze/upload", { method: "POST", body: form }));
+}
+
+async function analyze(button, request) {
+  showError(null);
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = "Analyzing...";
+  try {
+    const response = await request();
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Analysis failed.");
+    state.session = data;
+    renderDashboard(data);
+    if ($("advisor-enabled").checked) runAdvisor(data.session_id);
+    else renderAdvisorOff();
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = label;
+  }
+}
+
+function renderDashboard(data) {
+  const s = data.summary;
+  $("source-label").textContent = data.source.label || "Statement analysis";
+  $("source-meta").textContent =
+    [data.source.cycle_label, `${s.transaction_count} transactions`, data.source.kind === "fixture" ? "synthetic demo data" : "your upload, held in memory only"]
+      .filter(Boolean)
+      .join(" · ");
+
+  $("kpi-spend").textContent = money(s.total_spend);
+  $("kpi-count").textContent = `${s.transaction_count} line items`;
+  $("kpi-actual").textContent = money(s.actual_rewards);
+  $("kpi-actual-yield").textContent = `${s.actual_yield_pct}% effective yield`;
+  $("kpi-optimal").textContent = money(s.optimal_rewards);
+  $("kpi-optimal-yield").textContent = `${s.optimal_yield_pct}% if optimally allocated`;
+  $("kpi-missed").textContent = money(s.missed_value);
+  $("kpi-missed-sub").textContent = s.already_optimal
+    ? "Your allocation is already optimal for these rules."
+    : `across ${data.suboptimal_count} transactions on the wrong card`;
+
+  const maxSpend = Math.max(...data.categories.map((c) => c.spend), 1);
+  $("category-bars").innerHTML = data.categories
+    .map(
+      (c) => `
+      <div class="bar-row ${c.key === "general_spend" ? "guardrail" : ""}">
+        <div class="bar-head">
+          <span>${escapeHtml(c.label)}${c.key === "general_spend" ? " (guardrail)" : ""}</span>
+          <span>${money(c.spend)} &middot; ${c.share_pct}%</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" style="width:${(c.spend / maxSpend) * 100}%"></div></div>
+      </div>`
+    )
+    .join("");
+
+  $("wallet-rules").innerHTML = data.wallet_rules
+    .map(
+      (rule) => `
+      <div class="rule">
+        <span class="amount">${money(rule.projected_reward)}</span>
+        <h4>${escapeHtml(rule.category_label)} &rarr; ${escapeHtml(rule.card_name)} (${escapeHtml(rule.rate_label)})</h4>
+        <p>${escapeHtml(rule.condition)}</p>
+      </div>`
+    )
+    .join("");
+
+  $("suboptimal-count").textContent = `${data.suboptimal_count} found`;
+  const rows = data.suboptimal
+    .map(
+      (r) => `
+      <tr>
+        <td>${escapeHtml(r.date)}</td>
+        <td>${escapeHtml(r.merchant)}</td>
+        <td>${escapeHtml(r.category_label)}</td>
+        <td class="num">${money(r.amount)}</td>
+        <td>${escapeHtml(r.actual_card)}</td>
+        <td>${escapeHtml(r.better_card)}</td>
+        <td class="num missed">${money(r.missed)}</td>
+      </tr>`
+    )
+    .join("");
+  $("suboptimal-table").querySelector("tbody").innerHTML =
+    rows || `<tr><td colspan="7">Every transaction was already on the best available card.</td></tr>`;
+
+  $("cards-table").querySelector("tbody").innerHTML = data.cards
+    .map(
+      (c) => `
+      <tr>
+        <td>${escapeHtml(c.name)}</td>
+        <td class="num">${money(c.actual_spend)}</td>
+        <td class="num">${money(c.actual_reward)}</td>
+        <td>${c.min_spend ? `${money(c.min_spend)} <span class="flag ${c.min_spend_met ? "ok" : "bad"}">${c.min_spend_met ? "met" : "missed"}</span>` : "none"}</td>
+        <td>${c.monthly_cap ? `${money(c.monthly_cap)} <span class="flag ${c.cap_reached ? "bad" : "ok"}">${c.cap_reached ? "cap hit" : "headroom"}</span>` : "none"}</td>
+        <td class="num">${money(c.optimal_reward)}</td>
+      </tr>`
+    )
+    .join("");
+
+  const q = data.parse_quality;
+  $("parse-quality").textContent = `${q.rows_parsed} rows · ${q.general_spend_rows} guardrailed · ${q.lines_skipped} skipped`;
+  $("assumptions").innerHTML = q.notes
+    .concat(data.assumptions)
+    .map((note) => `<li>${escapeHtml(note)}</li>`)
+    .join("");
+
+  $("csv-link").href = `/api/export/${data.session_id}.csv`;
+  $("start").hidden = true;
+  $("dashboard").hidden = false;
+  window.scrollTo({ top: 0 });
+}
+
+function renderAdvisorOff() {
+  $("advisor-body").innerHTML = `<p class="muted small">${
+    state.advisorStatus && state.advisorStatus.available
+      ? "Turned off for this run - the cheat sheet below is from the local rules engine."
+      : escapeHtml((state.advisorStatus && state.advisorStatus.reason) || "Unavailable.")
+  }</p>`;
+}
+
+async function runAdvisor(sessionId) {
+  $("advisor-body").innerHTML = `
+    <div class="thinking"><div class="spinner"></div>
+    <span>The strategist is reading the card rules and testing strategies against the engine...</span></div>`;
+  try {
+    const response = await fetch(`/api/advisor/${sessionId}`, { method: "POST" });
+    const advisor = await response.json();
+    if (!response.ok) throw new Error(advisor.detail || "The strategist could not be reached.");
+    renderAdvisor(advisor);
+  } catch (error) {
+    $("advisor-body").innerHTML = `<p class="error">${escapeHtml(error.message)}</p>
+      <p class="muted small">The rules-engine cheat sheet below is unaffected.</p>`;
+  }
+}
+
+function renderAdvisor(advisor) {
+  if (advisor.mode !== "agent") {
+    $("advisor-body").innerHTML = `<p class="muted small">${escapeHtml(advisor.detail || "Unavailable.")}</p>`;
+    return;
+  }
+  const header = document.querySelector("#strategist-card h3");
+  header.innerHTML = `AI strategist &mdash; next cycle <span class="tag live">${escapeHtml(advisor.model)}</span>`;
+
+  const rules = advisor.rules
+    .map(
+      (rule) => `
+      <div class="rule">
+        <h4>${escapeHtml(rule.category_label)} &rarr; ${escapeHtml(rule.card_name)}</h4>
+        <p>${escapeHtml(rule.rationale)}</p>
+      </div>`
+    )
+    .join("");
+
+  const watchOuts = advisor.watch_outs.length
+    ? `<ul class="disclosure-list muted small">${advisor.watch_outs.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul>`
+    : "";
+
+  $("advisor-body").innerHTML = `
+    <p><strong>${escapeHtml(advisor.headline)}</strong></p>
+    <div class="rules">${rules}</div>
+    <p class="muted small">Everything else &rarr; ${escapeHtml(advisor.default_card_name)}</p>
+    <p class="muted small">${escapeHtml(advisor.reasoning_summary)}</p>
+    ${watchOuts}
+    <p class="muted small">
+      Projected next cycle on this plan: <strong>${money(advisor.verified_rewards)}</strong>
+      &mdash; re-scored by the local rules engine, not by the model
+      (${advisor.strategies_tested} candidate strategies tested, ${escapeHtml(advisor.path)} mode).
+    </p>
+    ${advisor.detail ? `<p class="muted small">${escapeHtml(advisor.detail)}</p>` : ""}`;
+}
+
+async function resetSession() {
+  if (state.session) {
+    await fetch(`/api/session/${state.session.session_id}`, { method: "DELETE" }).catch(() => {});
+  }
+  state.session = null;
+  $("dashboard").hidden = true;
+  $("start").hidden = false;
+  $("file-input").value = "";
+}
+
+function currentTheme() {
+  return document.documentElement.getAttribute("data-theme") || "dark";
+}
+
+function toggleTheme() {
+  const next = currentTheme() === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  localStorage.setItem("theme", next);
+  syncThemeButton();
+}
+
+function syncThemeButton() {
+  $("theme-toggle").textContent = currentTheme() === "dark" ? "Light mode" : "Dark mode";
+}
+
+function showError(message) {
+  const node = $("start-error");
+  node.hidden = !message;
+  node.textContent = message || "";
+}
+
+function escapeHtml(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, (ch) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch])
+  );
+}
