@@ -34,6 +34,8 @@ EPSILON = 1e-9
 # Above this wallet size, stop enumerating every combination of cards and walk a
 # single deactivation chain instead. Real wallets in v1 hold 2-5 cards.
 MAX_ENUMERATED_WALLET = 10
+# Rule budget for the exhaustive plan search that backstops allocate_optimal.
+MAX_RULES_FOR_OPTIMUM = 3
 
 
 @dataclass(frozen=True)
@@ -294,6 +296,13 @@ def allocate_optimal(
             best, best_key = allocation, key
 
     assert best is not None  # the empty bonus set is always feasible
+
+    # The greedy pass is a heuristic. The exhaustive search over small rule
+    # plans is exact within its class and occasionally beats it (it did on the
+    # demo fixture: $130.99 vs $125.19), so "optimal" is the better of the two.
+    _, _, rule_plan = best_rule_plan(transactions, wallet, MAX_RULES_FOR_OPTIMUM)
+    if rule_plan.total_reward > best.total_reward + EPSILON:
+        return rule_plan
     return best
 
 
@@ -306,6 +315,42 @@ def eligible_bonus_cards(
         for card in wallet
         if card.min_spend == 0 or spend.get(card.id, 0.0) + EPSILON >= card.min_spend
     }
+
+
+def best_rule_plan(
+    transactions: Sequence[Transaction],
+    wallet: Sequence[CardProfile],
+    max_rules: int = 3,
+) -> tuple[dict[str, str], str, Allocation]:
+    """Exact optimum among human-executable plans: <= max_rules category rules
+    plus one default card. Exhaustive - a few thousand plans for a 5-card
+    wallet - so the result is deterministic and provably best in its class.
+    Ties prefer fewer rules, then declaration order.
+    """
+    from itertools import product
+
+    if not wallet:
+        raise ValueError("wallet must contain at least one card")
+    order = {card.id: index for index, card in enumerate(wallet)}
+    categories = sorted({t.category for t in transactions})
+    best: Optional[tuple[tuple, dict[str, str], str, Allocation]] = None
+    for default in wallet:
+        others = [card.id for card in wallet if card.id != default.id]
+        for size in range(0, min(max_rules, len(categories)) + 1):
+            for subset in combinations(categories, size):
+                for choice in product(others, repeat=size):  # a rule pointing at the default is redundant
+                    mapping = dict(zip(subset, choice))
+                    allocation = score_strategy(transactions, wallet, mapping, default.id)
+                    key = (
+                        -round(allocation.total_reward, 6),
+                        size,
+                        order[default.id],
+                        tuple(sorted((c, order[cid]) for c, cid in mapping.items())),
+                    )
+                    if best is None or key < best[0]:
+                        best = (key, mapping, default.id, allocation)
+    assert best is not None
+    return best[1], best[2], best[3]
 
 
 def score_strategy(

@@ -75,8 +75,10 @@ def test_known_answer_multi_card_fixture():
     s = analyze(raw["transactions"], raw["wallet"]).payload["summary"]
     assert s["total_spend"] == pytest.approx(2822.65)
     assert s["actual_rewards"] == pytest.approx(58.75)
-    assert s["optimal_rewards"] == pytest.approx(125.19)
-    assert s["missed_value"] == pytest.approx(66.44)
+    # 130.99 comes from the exhaustive 3-rule search, which beats the greedy
+    # per-transaction pass (125.19) on this fixture - see allocate_optimal.
+    assert s["optimal_rewards"] == pytest.approx(130.99)
+    assert s["missed_value"] == pytest.approx(72.24)
 
 
 def test_single_card_wallet_is_already_optimal():
@@ -107,6 +109,40 @@ def test_score_strategy_is_deterministic_and_honours_minimums():
     assert a.total_reward == pytest.approx(b.total_reward)
     # OCBC only receives ~$600 of dining here, below its $800 minimum.
     assert "ocbc_365" not in a.bonus_cards
+
+
+def test_best_rule_plan_is_exact_and_known():
+    """Exhaustive search over <= N rules + default; pins the demo numbers."""
+    from app.rules_engine import best_rule_plan
+
+    raw = catalog.fixture("sg_multi_card_cycle")
+    result = analyze(raw["transactions"], raw["wallet"])
+    one, one_default, a1 = best_rule_plan(result.transactions, result.wallet, 1)
+    two, _, a2 = best_rule_plan(result.transactions, result.wallet, 2)
+    three, three_default, a3 = best_rule_plan(result.transactions, result.wallet, 3)
+    assert a1.total_reward <= a2.total_reward <= a3.total_reward  # more rules never hurt
+    assert one == {"groceries": "uob_one"} and one_default == "ocbc_365"
+    assert a3.total_reward == pytest.approx(130.99, abs=0.01)
+    assert three == {"general_spend": "dbs_live_fresh", "groceries": "uob_one", "shopping": "dbs_live_fresh"}
+    assert three_default == "ocbc_365"
+    # No rule ever points at the default card (it would be redundant).
+    assert three_default not in three.values()
+    # The per-transaction optimum is an upper bound on any rule plan.
+    assert a3.total_reward <= result.payload["summary"]["optimal_rewards"] + 1e-6
+    # Deterministic.
+    assert best_rule_plan(result.transactions, result.wallet, 3)[0] == three
+
+
+def test_best_rule_plan_prefers_fewer_rules_on_ties():
+    from app.rules_engine import best_rule_plan
+
+    cards = catalog.cards()
+    wallet = [cards["flat_cashback_card"], cards["dbs_live_fresh"]]
+    # DBS cannot reach its $600 minimum, so every plan scores the same as "all on flat".
+    txns = [_txn(1, "dining", 100.0, "flat_cashback_card"), _txn(2, "shopping", 50.0, "flat_cashback_card")]
+    mapping, default, allocation = best_rule_plan(txns, wallet, 3)
+    assert mapping == {} and default == "flat_cashback_card"
+    assert allocation.total_reward == pytest.approx(150.0 * 0.015)
 
 
 def test_empty_wallet_is_rejected():

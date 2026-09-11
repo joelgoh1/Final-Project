@@ -42,11 +42,11 @@ watch-outs when relevant:
 ## How to read the CLI output
 
 ```
-earned $58.75 (2.08%)  optimal $125.19 (4.44%)  MISSED $66.44
+earned $58.75 (2.08%)  optimal $130.99 (4.64%)  MISSED $72.24
 ```
 - `earned` = what the statement actually paid, chronological cap accounting.
-- `optimal` = per-transaction re-allocation across the wallet (an upper bound a human
-  cannot fully execute).
+- `optimal` = the better of a per-transaction re-allocation and the exhaustive best
+  3-rule plan. When the two coincide, the optimum is fully executable by a person.
 - A `--strategy` check is the executable middle: a category-level plan. Expect it to sit
   between `earned` and `optimal`; if it is below `earned`, the plan is worse than doing
   nothing - say so.

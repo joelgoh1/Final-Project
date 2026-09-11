@@ -33,12 +33,19 @@ from typing import Any, Callable, Optional, Sequence
 
 from . import catalog
 from .models import CardProfile, Transaction
-from .rules_engine import Allocation, allocate_optimal, score_actual, score_strategy
+from .rules_engine import Allocation, allocate_optimal, best_rule_plan, score_actual, score_strategy
 
 DEFAULT_BASE_URL = "https://opencode.ai/zen/go/v1"
 DEFAULT_MODEL = "deepseek-v4.1-flash"
+# Optional OpenAI-style reasoning knob (LLM_REASONING_EFFORT=low|medium|high|none).
+# Unset by default: the strategist is a judgment task and keeps the provider's
+# full reasoning depth. Measured on deepseek-v4.1-flash via OpenCode for
+# reference: default ~8k reasoning tokens / 40 s per turn, low ~1.7k / 10 s.
+DEFAULT_REASONING_EFFORT = ""
 MAX_RULES = 3
 MAX_TOOL_TURNS = 12
+# Turns in which the model may call score_allocation before it must answer.
+MAX_EXPLORATION_ROUNDS = 1
 REQUEST_TIMEOUT_SECONDS = 120.0
 
 CATEGORIES = ["dining", "groceries", "transport", "shopping", "utilities", "general_spend"]
@@ -55,14 +62,25 @@ Work like an analyst, not a calculator:
     caps are what make this non-obvious - a 10% rate on a card that never clears
     its minimum spend is worth 0.33%, and a 6% rate is worthless once the cap is
     full.
-  * Use score_allocation to test candidate strategies. It runs the real rules
-    engine, so its numbers are ground truth. Test at least three genuinely
-    different strategies before deciding, including ones that deliberately
-    consolidate spend onto fewer cards to clear a minimum.
+  * The search is already done. Your first message includes engine-scored
+    baselines, among them the EXHAUSTIVE best plan with 1, 2 and 3 rules -
+    provably optimal for their rule budget. Do not try to out-search them.
+    Your value is judgment: is the 3-rule optimum worth its complexity over the
+    1- or 2-rule plan? Which minimum spend or cap makes it fragile? Say so.
+  * SKILLS for anything you still want to check: best_rule_plan (exact search
+    for a rule budget), best_rate_plan (the naive plan), fix_minimums (repair a
+    plan whose cards miss their minimum), score_allocation (score any plan).
+    Prefer calling them over reasoning the moves out by hand. All numbers come
+    from the real rules engine and are ground truth.
   * Prefer a strategy a human can actually follow at the till. Three rules
     maximum, and each rule must name one category and one card.
   * Be honest about the trade-offs: if clearing a minimum spend on one card
     starves another card's bonus, say so.
+  * Be fast. The card rules, the spend summary and several engine-scored
+    baseline strategies are already in your first message - do not re-fetch
+    them. Put every score_allocation call you want into ONE turn (they run in
+    parallel), then answer. Keep any visible reasoning to a few short lines;
+    the numbers come from the tools, not from your arithmetic.
 
 Data note: the rows you can see contain only date, merchant, amount, category
 and which card was used. No cardholder names, addresses or card numbers exist
@@ -126,10 +144,14 @@ class AdvisorResult:
     provider: str = ""
     path: str = ""  # "tool-loop" or "single-shot"
     detail: str = ""
+    trace: list[dict] = field(default_factory=list)  # one entry per model turn
+    best_engine_plan: Optional[dict] = None  # exhaustive baseline the plan is judged against
 
     def to_dict(self) -> dict:
         return {
             "mode": self.mode,
+            "trace": self.trace,
+            "best_engine_plan": self.best_engine_plan,
             "headline": self.headline,
             "rules": [
                 {
@@ -162,10 +184,13 @@ class AdvisorResult:
 
 def settings() -> dict:
     """Read provider settings at call time so a freshly loaded .env is honoured."""
+    effort = (os.getenv("LLM_REASONING_EFFORT") or DEFAULT_REASONING_EFFORT).strip().lower()
     return {
         "api_key": os.getenv("OPENCODE_API_KEY", "").strip(),
         "base_url": (os.getenv("LLM_BASE_URL") or DEFAULT_BASE_URL).rstrip("/"),
         "model": os.getenv("LLM_MODEL") or DEFAULT_MODEL,
+        # "" / "default" leaves the provider's own reasoning depth untouched.
+        "reasoning_effort": "" if effort in ("", "default") else effort,
     }
 
 
@@ -185,11 +210,14 @@ class ChatClient:
         model: str,
         timeout: float = REQUEST_TIMEOUT_SECONDS,
         session_id: Optional[str] = None,
+        reasoning_effort: str = "",
     ):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
+        # OpenAI-style knob; dropped automatically if the provider rejects it.
+        self.reasoning_effort = reasoning_effort
         # OpenCode Go routes by session; one id per strategist run keeps the
         # whole tool loop on the same upstream. Harmless for other providers.
         self.session_id = session_id or uuid.uuid4().hex
@@ -209,17 +237,20 @@ class ChatClient:
             body["tool_choice"] = "auto"
         if response_format:
             body["response_format"] = response_format
+        if self.reasoning_effort:
+            body["reasoning_effort"] = self.reasoning_effort
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "x-opencode-session": self.session_id,
+        }
         try:
-            response = httpx.post(
-                f"{self.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                    "x-opencode-session": self.session_id,
-                },
-                json=body,
-                timeout=self.timeout,
-            )
+            response = httpx.post(f"{self.base_url}/chat/completions", headers=headers, json=body, timeout=self.timeout)
+            if response.status_code == 400 and "reasoning_effort" in body:
+                # Provider does not know the knob: drop it for the rest of the run.
+                self.reasoning_effort = ""
+                body.pop("reasoning_effort")
+                response = httpx.post(f"{self.base_url}/chat/completions", headers=headers, json=body, timeout=self.timeout)
         except httpx.HTTPError as exc:
             raise ProviderError(f"network error talking to {self.base_url}: {exc}") from exc
         if response.status_code >= 400:
@@ -249,6 +280,14 @@ def advisor_status() -> dict:
 # --------------------------------------------------------------------------- #
 # Engine-backed payloads and tools
 # --------------------------------------------------------------------------- #
+
+
+def _cards_for(wallet: Sequence[CardProfile]) -> dict[str, CardProfile]:
+    """Bundled catalog with the session's (possibly edited) wallet layered on top."""
+    cards = dict(catalog.cards())
+    for card in wallet:
+        cards[card.id] = card
+    return cards
 
 
 def _cards_payload(wallet: Sequence[CardProfile]) -> list[dict]:
@@ -309,7 +348,7 @@ def build_tools(
     Every tool is backed by the rules engine. `tested` collects each strategy
     the agent scores so the UI can say how many candidates were explored.
     """
-    cards = catalog.cards()
+    cards = _cards_for(wallet)
     actual = score_actual(transactions, cards)
     wallet_ids = {c.id for c in wallet}
 
@@ -360,16 +399,167 @@ def build_tools(
         if unknown:
             return json.dumps({"error": f"Unknown card ids {unknown}. Wallet holds {sorted(wallet_ids)}."})
 
-        allocation = score_strategy(transactions, wallet, mapping, default_card_id or None)
+        return json.dumps(_score_plan(mapping, default_card_id or None))
+
+    def _score_plan(mapping: dict[str, str], default_card_id: Optional[str], label: str = "") -> dict:
+        allocation = score_strategy(transactions, wallet, mapping, default_card_id)
         result = {
             "strategy": {"rules": mapping, "default_card_id": default_card_id or "keep as charged"},
             **_allocation_payload(allocation, wallet),
             "vs_actual": round(allocation.total_reward - actual.total_reward, 2),
         }
+        if label:
+            result["label"] = label
         tested.append(result)
+        return result
+
+    # ---- skills: the deterministic moves the model otherwise re-derives ----
+
+    categories_present = sorted({t.category for t in transactions})
+
+    def best_rate_plan(_: dict) -> str:
+        """Each category on the card with the highest headline rate; default = best base rate."""
+        mapping = {
+            category: max(wallet, key=lambda c: (c.rate_for(category), -wallet.index(c))).id
+            for category in categories_present
+            if category != "general_spend"
+        }
+        default = max(wallet, key=lambda c: (c.base_rate, -wallet.index(c))).id
+        result = _score_plan(mapping, default, "best headline rate per category (ignores minimums)")
+        result["note"] = (
+            "Naive plan. Cards whose minimum spend is not met show min_spend_met=false - "
+            "pass this plan to fix_minimums to repair it."
+        )
+        return json.dumps(result)
+
+    def fix_minimums(args: dict) -> str:
+        """Repair a plan whose cards miss their minimum spend, one whole-category move at a time."""
+        rules = args.get("rules", [])
+        if isinstance(rules, str):
+            try:
+                rules = json.loads(rules)
+            except ValueError as exc:
+                return json.dumps({"error": f"rules must be a JSON array: {exc}"})
+        try:
+            mapping = {str(r["category"]): str(r["card_id"]) for r in rules}
+        except (KeyError, TypeError) as exc:
+            return json.dumps({"error": f"each rule needs category and card_id: {exc}"})
+        default = str(args.get("default_card_id") or "") or None
+        if any(cid not in wallet_ids for cid in list(mapping.values()) + ([default] if default else [])):
+            return json.dumps({"error": f"Unknown card id. Wallet holds {sorted(wallet_ids)}."})
+
+        moves: list[str] = []
+        current = score_strategy(transactions, wallet, mapping, default)
+        for _ in range(2 * len(wallet)):
+            starving = [
+                c for c in wallet
+                if c.id not in current.bonus_cards
+                and c.min_spend > 0
+                and (c.id in mapping.values() or c.id == default)
+            ]
+            if not starving:
+                break
+            best_move = None
+            for card in starving:
+                # Candidate moves: point one category (or the default) at this card.
+                for category in categories_present:
+                    trial_rules, trial_default = dict(mapping), default
+                    if category == "general_spend" or mapping.get(category) is None:
+                        if category == "general_spend":
+                            trial_default = card.id
+                        else:
+                            trial_rules[category] = card.id
+                    else:
+                        trial_rules[category] = card.id
+                    trial = score_strategy(transactions, wallet, trial_rules, trial_default)
+                    gain = trial.total_reward - current.total_reward
+                    if best_move is None or gain > best_move[0]:
+                        best_move = (gain, category, card, trial_rules, trial_default, trial)
+            if best_move is None or best_move[0] <= 1e-9:
+                # No single move pays: the honest answer is to drop that card's bonus.
+                moves.append(
+                    "no whole-category move lifts " + ", ".join(c.name for c in starving)
+                    + " past its minimum without losing more elsewhere - leave it at base rate"
+                )
+                break
+            gain, category, card, mapping, default, current = best_move
+            moves.append(f"move {category} -> {card.name} (+${gain:.2f})")
+
+        result = _score_plan(mapping, default, "fix_minimums result")
+        result["moves"] = moves
+        return json.dumps(result)
+
+    def best_plan(args: dict) -> str:
+        """Exhaustive optimum among plans with <= max_rules rules plus a default card."""
+        try:
+            max_rules = max(1, min(int(args.get("max_rules") or MAX_RULES), MAX_RULES))
+        except (TypeError, ValueError):
+            max_rules = MAX_RULES
+        mapping, default, _ = best_rule_plan(transactions, wallet, max_rules)
+        result = _score_plan(mapping, default, f"exhaustive best plan with <= {max_rules} rules")
+        result["note"] = (
+            "Provably the best plan of this shape for this cycle's spend. Beating it "
+            "requires more rules or per-transaction routing a person cannot follow."
+        )
         return json.dumps(result)
 
     specs = [
+        {
+            "type": "function",
+            "function": {
+                "name": "best_rule_plan",
+                "description": (
+                    "SKILL. Exhaustively search every plan with at most max_rules category rules "
+                    "plus one default card and return the highest-scoring one. Deterministic and exact."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "max_rules": {"type": "integer", "minimum": 1, "maximum": 3, "description": "Rule budget (default 3)."}
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "best_rate_plan",
+                "description": (
+                    "SKILL. Build and score the naive plan: every category on the card with the "
+                    "highest headline rate. Shows which cards would miss their minimum spend."
+                ),
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "fix_minimums",
+                "description": (
+                    "SKILL. Take a plan and repair cards that miss their minimum spend by moving one "
+                    "whole category at a time onto them, accepting only moves that raise total reward. "
+                    "Returns the repaired plan, its engine score and the moves made."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "rules": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "category": {"type": "string", "enum": CATEGORIES},
+                                    "card_id": {"type": "string"},
+                                },
+                                "required": ["category", "card_id"],
+                            },
+                        },
+                        "default_card_id": {"type": "string"},
+                    },
+                    "required": ["rules"],
+                },
+            },
+        },
         {
             "type": "function",
             "function": {
@@ -435,12 +625,18 @@ def build_tools(
         },
     ]
     impls = {
+        "best_rule_plan": best_plan,
+        "best_rate_plan": best_rate_plan,
+        "fix_minimums": fix_minimums,
         "get_card_rules": get_card_rules,
         "get_spend_summary": get_spend_summary,
         "list_transactions": list_transactions,
         "score_allocation": score_allocation,
     }
     return specs, impls
+
+
+SCORING_TOOLS = {"score_allocation", "best_rate_plan", "fix_minimums", "best_rule_plan"}
 
 
 def precomputed_candidates(
@@ -451,7 +647,7 @@ def precomputed_candidates(
     The engine's per-transaction optimum is distilled into a category -> card
     map, alongside "everything on one card" plans and the statement as charged.
     """
-    cards = catalog.cards()
+    cards = _cards_for(wallet)
     actual = score_actual(transactions, cards)
     candidates: list[dict] = []
 
@@ -481,6 +677,10 @@ def precomputed_candidates(
     )
     add("engine optimum distilled to category rules", distilled, default)
 
+    for size in (1, 2, MAX_RULES):
+        mapping, default_id, _ = best_rule_plan(transactions, wallet, size)
+        add(f"exhaustive best plan with <= {size} rule{'s' if size > 1 else ''}", mapping, default_id)
+
     for card in wallet:
         add(f"everything on {card.name}", {}, card.id)
 
@@ -508,18 +708,26 @@ def run_advisor(
         status = advisor_status()
         if not status["available"]:
             return AdvisorResult(mode="unavailable", detail=status["reason"], model=cfg["model"], provider=cfg["base_url"])
-        client = ChatClient(cfg["api_key"], cfg["base_url"], cfg["model"])
+        client = ChatClient(cfg["api_key"], cfg["base_url"], cfg["model"], reasoning_effort=cfg["reasoning_effort"])
     model = getattr(client, "model", cfg["model"])
     provider = getattr(client, "base_url", cfg["base_url"])
 
     tested: list[dict] = []
     specs, impls = build_tools(transactions, wallet, dashboard, tested)
+    candidates = precomputed_candidates(transactions, wallet)
+    seed = {
+        "card_rules": json.loads(impls["get_card_rules"]({})),
+        "spend_summary": json.loads(impls["get_spend_summary"]({})),
+        "engine_scored_baselines": candidates,
+    }
 
     answer = None
     path = "tool-loop"
     tool_loop_error = ""
+    trace: list[dict] = []
     try:
-        answer = _run_tool_loop(client, specs, impls)
+        answer = _run_tool_loop(client, specs, impls, seed=seed, trace=trace)
+        tested.extend(candidates)
     except Exception as exc:  # noqa: BLE001 - fall through to the single-shot path
         tool_loop_error = f"{type(exc).__name__}: {exc}"
 
@@ -528,7 +736,6 @@ def run_advisor(
         # request with engine-precomputed candidates and no tools.
         path = "single-shot"
         try:
-            candidates = precomputed_candidates(transactions, wallet)
             answer = _run_single_shot(client, transactions, wallet, dashboard, candidates)
             tested.extend(candidates)
         except Exception as exc:  # noqa: BLE001 - keep the dashboard usable
@@ -548,31 +755,81 @@ def run_advisor(
         )
 
     result = verify(answer, transactions, wallet, len(tested))
-    result.model, result.provider, result.path = model, provider, path
+    result.model, result.provider, result.path, result.trace = model, provider, path, trace
+    # Transparency: the engine's exhaustive optimum is a known baseline. If the
+    # model recommends something weaker, say so instead of hiding it.
+    best_baseline = max(candidates, key=lambda c: c["total_reward"])
+    result.best_engine_plan = {
+        "label": best_baseline["label"],
+        "total_reward": best_baseline["total_reward"],
+        "rules": best_baseline["rules"],
+        "default_card_id": best_baseline["default_card_id"],
+    }
+    if result.verified_rewards + 0.005 < best_baseline["total_reward"]:
+        result.detail = (
+            f"The engine's {best_baseline['label']} scores ${best_baseline['total_reward']:.2f}; "
+            f"the strategist's plan scores ${result.verified_rewards:.2f}. "
+            "Read its reasoning for why it chose the simpler plan - or take the engine's."
+        ).strip()
     if tool_loop_error:
         result.detail = f"Function calling unavailable through this provider ({tool_loop_error}); used single-shot mode."
     return result
 
 
-def _run_tool_loop(client: ChatClient, specs: list[dict], impls: dict[str, Callable[[dict], str]]) -> Optional[dict]:
-    """Standard function-calling loop: call tools until the model answers in JSON."""
+def _run_tool_loop(
+    client: ChatClient,
+    specs: list[dict],
+    impls: dict[str, Callable[[dict], str]],
+    seed: Optional[dict] = None,
+    trace: Optional[list[dict]] = None,
+) -> Optional[dict]:
+    """Function-calling loop: call tools until the model answers in JSON.
+
+    `seed` (card rules, spend summary, engine-scored baselines) is placed in
+    the first user turn so the model starts from ground truth instead of
+    spending round trips discovering it. `trace` receives one entry per model
+    turn - reasoning, visible text, and each tool call with its result - so
+    the decision path can be inspected afterwards.
+    """
+    trace = trace if trace is not None else []
+    brief = (
+        "Design next cycle's wallet strategy for this statement. The card rules, "
+        "spend summary and engine-scored baseline strategies are below. Use "
+        "score_allocation to test the variants you think can beat the best baseline "
+        "(all in one turn), then return your final JSON answer."
+    )
+    if seed is not None:
+        brief += "\n\nContext (JSON):\n" + json.dumps(seed)
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                "Design next cycle's wallet strategy for this statement. Start with "
-                "get_card_rules and get_spend_summary, test at least three candidate "
-                "strategies with score_allocation, then return your final JSON answer."
-            ),
-        },
+        {"role": "user", "content": brief},
     ]
+    exploration_rounds = 0
     for _ in range(MAX_TOOL_TURNS):
-        response = client.chat(messages, tools=specs)
+        # After the allowed scoring rounds, withhold the tools: the next turn
+        # must be the answer. Measured on deepseek-v4.1-flash, a second round
+        # of score_allocation calls cost ~35% of the run and never changed the
+        # final plan - the model over-explores, so the loop draws the line.
+        explore = exploration_rounds < MAX_EXPLORATION_ROUNDS
+        if not explore:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "You have the engine's scores for every strategy you tested above. "
+                        "Return your final JSON answer now - no further tool calls."
+                    ),
+                }
+            )
+        response = client.chat(messages, tools=specs if explore else None)
         message = _first_message(response)
         tool_calls = message.get("tool_calls") or []
+        entry = _trace_entry(len(trace) + 1, response, message, tools_offered=explore)
+        trace.append(entry)
         if not tool_calls:
             return parse_answer(message.get("content"))
+        if any(call.get("function", {}).get("name") in SCORING_TOOLS for call in tool_calls):
+            exploration_rounds += 1
 
         messages.append(
             {"role": "assistant", "content": message.get("content") or None, "tool_calls": tool_calls}
@@ -587,15 +844,66 @@ def _run_tool_loop(client: ChatClient, specs: list[dict], impls: dict[str, Calla
             impl = impls.get(name)
             output = impl(args) if impl else json.dumps({"error": f"unknown tool {name}"})
             messages.append({"role": "tool", "tool_call_id": call.get("id", name), "content": output})
+            entry["tool_calls"].append({"name": name, "args": args, "result": _summarise_tool_output(output)})
 
     # Out of turns: ask for the answer without tools.
     messages.append({"role": "user", "content": "Stop testing and return your final JSON answer now."})
-    return parse_answer(_first_message(client.chat(messages)).get("content"))
+    response = client.chat(messages)
+    message = _first_message(response)
+    trace.append(_trace_entry(len(trace) + 1, response, message, tools_offered=False))
+    return parse_answer(message.get("content"))
+
+
+TRACE_REASONING_CHARS = 4000
+
+
+def _trace_entry(turn: int, response: dict, message: dict, tools_offered: bool) -> dict:
+    usage = response.get("usage") or {}
+    details = usage.get("completion_tokens_details") or {}
+    reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
+    return {
+        "turn": turn,
+        "tools_offered": tools_offered,
+        "reasoning": reasoning[:TRACE_REASONING_CHARS],
+        "reasoning_truncated": len(reasoning) > TRACE_REASONING_CHARS,
+        "text": (message.get("content") or "")[:2000],
+        "tokens": {
+            "prompt": usage.get("prompt_tokens"),
+            "cached": (usage.get("prompt_tokens_details") or {}).get("cached_tokens"),
+            "completion": usage.get("completion_tokens"),
+            "reasoning": details.get("reasoning_tokens"),
+        },
+        "tool_calls": [],
+    }
+
+
+def _summarise_tool_output(output: str) -> dict:
+    """Keep the parts of a tool result worth showing in the reasoning tree."""
+    try:
+        data = json.loads(output)
+    except ValueError:
+        return {"raw": output[:300]}
+    if not isinstance(data, dict):
+        return {"raw": output[:300]}
+    if "error" in data:
+        return {"error": data["error"]}
+    summary: dict = {}
+    for key in ("label", "total_reward", "vs_actual", "moves", "note", "row_count", "engine_per_transaction_optimum"):
+        if key in data:
+            summary[key] = data[key]
+    if "strategy" in data:
+        summary["strategy"] = data["strategy"]
+    if "cards" in data and isinstance(data["cards"], list) and data["cards"] and "min_spend_met" in data["cards"][0]:
+        summary["cards"] = {
+            c["card_id"]: ("bonus" if c["min_spend_met"] else "BASE ONLY") + (" +cap hit" if c.get("bonus_cap_reached") else "")
+            for c in data["cards"]
+        }
+    return summary or {"keys": sorted(data)}
 
 
 def _run_single_shot(client: ChatClient, transactions, wallet, dashboard, candidates: list[dict]) -> Optional[dict]:
     """One plain request, no tools: the model reasons over engine-scored candidates."""
-    cards = catalog.cards()
+    cards = _cards_for(wallet)
     context = {
         "cycle": dashboard["source"].get("cycle_label", "one statement cycle"),
         "summary": dashboard["summary"],
@@ -654,7 +962,7 @@ def verify(
     strategies_tested: int = 0,
 ) -> AdvisorResult:
     """Re-score the model's recommendation with the engine before showing it."""
-    cards = catalog.cards()
+    cards = _cards_for(wallet)
     labels = catalog.category_labels()
     wallet_ids = {c.id for c in wallet}
     rules: list[AdvisorRule] = []
@@ -696,3 +1004,157 @@ def verify(
         watch_outs=[str(w).strip() for w in watch_outs if str(w).strip()][:3],
         strategies_tested=strategies_tested,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Conversation: the cardholder talks back
+# --------------------------------------------------------------------------- #
+
+CHAT_INSTRUCTIONS = """(You are now in conversation with the cardholder about the plan above.
+Reply in plain, friendly prose - a few short sentences, no bullet dumps, no JSON
+unless the recommendation changes. Take feedback seriously: if they say a card is
+not an option, a category is wrong, a rule is too fiddly, or they want something
+simpler, re-plan - score any new plan with the skills before quoting a number.
+If your recommendation changes, finish your reply with a JSON object in the
+final-answer schema so the dashboard can update; otherwise no JSON at all.
+Never invent figures.)"""
+
+MAX_CHAT_HISTORY = 12
+
+
+def build_seed(transactions, wallet, dashboard, impls, candidates) -> dict:
+    """Ground-truth context placed in the first user turn (also reused by chat)."""
+    return {
+        "card_rules": json.loads(impls["get_card_rules"]({})),
+        "spend_summary": json.loads(impls["get_spend_summary"]({})),
+        "engine_scored_baselines": candidates,
+    }
+
+
+def _prior_plan_message(prior: Optional[dict]) -> str:
+    if not prior or prior.get("mode") != "agent":
+        return "I have not produced a recommendation for this statement yet."
+    plan = {
+        "headline": prior.get("headline", ""),
+        "recommended_rules": [
+            {"category": r["category"], "card_id": r["card_id"], "rationale": r.get("rationale", "")}
+            for r in prior.get("rules", [])
+        ],
+        "default_card_id": prior.get("default_card_id", ""),
+        "projected_rewards": prior.get("verified_rewards"),
+        "reasoning_summary": prior.get("reasoning_summary", ""),
+        "watch_outs": prior.get("watch_outs", []),
+    }
+    return "My current recommendation (engine-verified):\n" + json.dumps(plan)
+
+
+def chat_with_strategist(
+    transactions: Sequence[Transaction],
+    wallet: Sequence[CardProfile],
+    dashboard: dict,
+    prior_plan: Optional[dict],
+    history: Sequence[dict],
+    user_message: str,
+    client: Optional[ChatClient] = None,
+) -> dict:
+    """One conversational turn with the strategist.
+
+    Returns {"mode", "reply", "plan", "trace", "detail"}. `plan` is an
+    engine-verified AdvisorResult dict when the model revised its
+    recommendation, else None. `history` is [{"role": "user"|"assistant",
+    "text": ...}] from earlier turns; the caller persists it.
+    """
+    cfg = settings()
+    if client is None:
+        status = advisor_status()
+        if not status["available"]:
+            return {"mode": "unavailable", "reply": status["reason"], "plan": None, "trace": [], "detail": ""}
+        client = ChatClient(cfg["api_key"], cfg["base_url"], cfg["model"], reasoning_effort=cfg["reasoning_effort"])
+
+    tested: list[dict] = []
+    specs, impls = build_tools(transactions, wallet, dashboard, tested)
+    candidates = precomputed_candidates(transactions, wallet)
+    seed = build_seed(transactions, wallet, dashboard, impls, candidates)
+
+    messages: list[dict] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": "Statement context (JSON) - card rules, spend summary and engine-scored baselines:\n"
+            + json.dumps(seed),
+        },
+        {"role": "assistant", "content": _prior_plan_message(prior_plan)},
+    ]
+    for turn in list(history)[-MAX_CHAT_HISTORY:]:
+        role = "assistant" if turn.get("role") == "assistant" else "user"
+        messages.append({"role": role, "content": str(turn.get("text", ""))[:4000]})
+    messages.append({"role": "user", "content": f"{user_message.strip()}\n\n{CHAT_INSTRUCTIONS}"})
+
+    trace: list[dict] = []
+    try:
+        text = _converse(client, messages, specs, impls, trace)
+    except Exception as exc:  # noqa: BLE001 - keep the UI usable
+        return {"mode": "error", "reply": "", "plan": None, "trace": trace, "detail": f"{type(exc).__name__}: {exc}"}
+
+    plan_json = parse_answer(text)
+    plan = None
+    reply = text.strip()
+    if isinstance(plan_json, dict) and plan_json.get("recommended_rules"):
+        verified = verify(plan_json, transactions, wallet, len(tested))
+        verified.model, verified.provider, verified.path, verified.trace = (
+            getattr(client, "model", cfg["model"]),
+            getattr(client, "base_url", cfg["base_url"]),
+            "chat",
+            trace,
+        )
+        best = max(candidates, key=lambda c: c["total_reward"])
+        verified.best_engine_plan = {
+            "label": best["label"],
+            "total_reward": best["total_reward"],
+            "rules": best["rules"],
+            "default_card_id": best["default_card_id"],
+        }
+        plan = verified.to_dict()
+        reply = _prose_before_json(text) or verified.headline
+
+    return {"mode": "agent", "reply": reply, "plan": plan, "trace": trace, "detail": ""}
+
+
+def _converse(client: ChatClient, messages: list[dict], specs, impls, trace: list[dict]) -> str:
+    """Tool loop for a chat turn: one scoring round, then the reply."""
+    exploration_rounds = 0
+    for _ in range(MAX_TOOL_TURNS):
+        explore = exploration_rounds < MAX_EXPLORATION_ROUNDS
+        if not explore:
+            messages.append({"role": "user", "content": "Reply to the cardholder now - no further tool calls."})
+        response = client.chat(messages, tools=specs if explore else None)
+        message = _first_message(response)
+        tool_calls = message.get("tool_calls") or []
+        entry = _trace_entry(len(trace) + 1, response, message, tools_offered=explore)
+        trace.append(entry)
+        if not tool_calls:
+            return message.get("content") or ""
+        if any(call.get("function", {}).get("name") in SCORING_TOOLS for call in tool_calls):
+            exploration_rounds += 1
+        messages.append({"role": "assistant", "content": message.get("content") or None, "tool_calls": tool_calls})
+        for call in tool_calls:
+            fn = call.get("function", {})
+            name = fn.get("name", "")
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except ValueError:
+                args = {}
+            impl = impls.get(name)
+            output = impl(args) if impl else json.dumps({"error": f"unknown tool {name}"})
+            messages.append({"role": "tool", "tool_call_id": call.get("id", name), "content": output})
+            entry["tool_calls"].append({"name": name, "args": args, "result": _summarise_tool_output(output)})
+    return ""
+
+
+def _prose_before_json(text: str) -> str:
+    """The human-readable part of a reply that ends in a JSON block."""
+    cut = text.find("```")
+    if cut == -1:
+        cut = text.find("{")
+    prose = text[:cut] if cut > 0 else ""
+    return prose.strip()

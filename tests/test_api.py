@@ -89,7 +89,12 @@ def test_settings_read_env_at_call_time(monkeypatch):
     monkeypatch.delenv("LLM_BASE_URL", raising=False)
     monkeypatch.delenv("LLM_MODEL", raising=False)
     cfg = advisor_module.settings()
-    assert cfg == {"api_key": "oc-test", "base_url": "https://opencode.ai/zen/go/v1", "model": "deepseek-v4.1-flash"}
+    assert cfg == {
+        "api_key": "oc-test",
+        "base_url": "https://opencode.ai/zen/go/v1",
+        "model": "deepseek-v4.1-flash",
+        "reasoning_effort": "",  # provider default unless LLM_REASONING_EFFORT is set
+    }
     status = advisor_module.advisor_status()
     assert status["available"] and status["provider"] == "https://opencode.ai/zen/go/v1"
 
@@ -143,9 +148,13 @@ def test_tool_loop_runs_engine_tools_and_verifies_the_answer():
     }
     fake = _ScriptedClient(
         [
+            # info tools only - does not count as an exploration round
             _assistant(tool_calls=[_call("c1", "get_card_rules", {}), _call("c2", "get_spend_summary", {})]),
-            _assistant(tool_calls=[_call("c3", "score_allocation", {"rules": [{"category": "groceries", "card_id": "uob_one"}], "default_card_id": "dbs_live_fresh"})]),
-            _assistant(tool_calls=[_call("c4", "score_allocation", {"rules": [{"category": "dining", "card_id": "bogus"}]})]),
+            # the single allowed scoring round, with one valid and one bogus plan
+            _assistant(tool_calls=[
+                _call("c3", "score_allocation", {"rules": [{"category": "groceries", "card_id": "uob_one"}], "default_card_id": "dbs_live_fresh"}),
+                _call("c4", "score_allocation", {"rules": [{"category": "dining", "card_id": "bogus"}]}),
+            ]),
             _assistant(content="```json\n" + json.dumps(final) + "\n```"),
         ]
     )
@@ -158,7 +167,26 @@ def test_tool_loop_runs_engine_tools_and_verifies_the_answer():
     ).total_reward
     assert outcome.verified_rewards == pytest.approx(expected)
     assert outcome.model_claimed_rewards == 999.99
-    assert outcome.strategies_tested == 1  # the bogus card id was rejected, not scored
+    seeded = len(advisor_module.precomputed_candidates(result.transactions, result.wallet))
+    assert outcome.strategies_tested == seeded + 1  # bogus card id rejected, not scored
+
+    # Seeded context in the first user turn; tools offered while exploring, withheld after.
+    first_user = fake.requests[0]["messages"][1]["content"]
+    assert "engine_scored_baselines" in first_user and "card_rules" in first_user
+    assert len(fake.requests[0]["tools"]) == 7 and len(fake.requests[1]["tools"]) == 7
+    assert fake.requests[2]["tools"] is None
+    assert "final JSON answer now" in fake.requests[2]["messages"][-1]["content"]
+
+    # The reasoning tree records every turn, call and result summary.
+    assert [t["turn"] for t in outcome.trace] == [1, 2, 3]
+    assert [c["name"] for c in outcome.trace[0]["tool_calls"]] == ["get_card_rules", "get_spend_summary"]
+    scored = outcome.trace[1]["tool_calls"]
+    assert scored[0]["result"]["total_reward"] == pytest.approx(
+        score_strategy(result.transactions, result.wallet, {"groceries": "uob_one"}, "dbs_live_fresh").total_reward, abs=0.01
+    )
+    assert "error" in scored[1]["result"]
+    assert outcome.trace[2]["tools_offered"] is False and outcome.trace[2]["tool_calls"] == []
+    assert "trace" in outcome.to_dict()
 
     # Tool results were fed back in OpenAI format and hold only redacted data.
     tool_messages = [m for m in fake.requests[-1]["messages"] if m["role"] == "tool"]
@@ -166,7 +194,39 @@ def test_tool_loop_runs_engine_tools_and_verifies_the_answer():
     assert "Unknown card ids" in next(m["content"] for m in tool_messages if m["tool_call_id"] == "c4")
     blob = json.dumps(fake.requests[-1]["messages"])
     assert "TAN AH KOW" not in blob and "4123" not in blob
-    assert len(fake.requests[0]["tools"]) == 4
+
+
+def test_skills_build_and_repair_plans_deterministically():
+    raw = catalog.fixture("sg_multi_card_cycle")
+    result = analyze(raw["transactions"], raw["wallet"])
+    tested: list = []
+    _specs, impls = advisor_module.build_tools(result.transactions, result.wallet, result.payload, tested)
+
+    naive = json.loads(impls["best_rate_plan"]({}))
+    # Groceries -> UOB One (10%), dining -> OCBC 365 (6%), shopping -> DBS (5%).
+    assert naive["strategy"]["rules"]["groceries"] == "uob_one"
+    assert naive["strategy"]["rules"]["dining"] == "ocbc_365"
+    assert naive["strategy"]["rules"]["shopping"] == "dbs_live_fresh"
+    assert "note" in naive
+
+    rules = [{"category": c, "card_id": cid} for c, cid in naive["strategy"]["rules"].items()]
+    repaired = json.loads(impls["fix_minimums"]({"rules": rules, "default_card_id": naive["strategy"]["default_card_id"]}))
+    assert repaired["total_reward"] >= naive["total_reward"]
+    assert isinstance(repaired["moves"], list)
+    # Every accepted move is a real engine improvement; the result is re-scorable.
+    mapping = repaired["strategy"]["rules"]
+    default = repaired["strategy"]["default_card_id"]
+    default = None if default == "keep as charged" else default
+    assert repaired["total_reward"] == pytest.approx(
+        score_strategy(result.transactions, result.wallet, mapping, default).total_reward, abs=0.01
+    )
+    assert len(tested) == 2  # both skill results count as tested strategies
+
+    same_again = json.loads(impls["fix_minimums"]({"rules": rules, "default_card_id": naive["strategy"]["default_card_id"]}))
+    assert same_again["strategy"] == repaired["strategy"]  # deterministic
+
+    bad = json.loads(impls["fix_minimums"]({"rules": [{"category": "dining", "card_id": "nope"}]}))
+    assert "error" in bad
 
 
 class _NoToolsClient:
@@ -274,6 +334,96 @@ def test_chat_client_sends_bearer_and_stable_opencode_session(monkeypatch):
     assert advisor_module.ChatClient("k", "u", "m").session_id != session  # fresh per run
 
 
+def test_chat_turn_answers_in_prose_without_changing_the_plan():
+    raw = catalog.fixture("sg_multi_card_cycle")
+    result = analyze(raw["transactions"], raw["wallet"])
+    prior = {
+        "mode": "agent",
+        "headline": "Groceries on UOB One.",
+        "rules": [{"category": "groceries", "card_id": "uob_one", "rationale": "10%"}],
+        "default_card_id": "ocbc_365",
+        "verified_rewards": 112.19,
+        "reasoning_summary": "",
+        "watch_outs": [],
+    }
+    fake = _ScriptedClient([
+        _assistant(tool_calls=[_call("s1", "score_allocation", {"rules": [{"category": "dining", "card_id": "ocbc_365"}], "default_card_id": "ocbc_365"})]),
+        _assistant(content="Dining is already on OCBC 365 by default, so a separate rule adds nothing - the engine scores it the same."),
+    ])
+    out = advisor_module.chat_with_strategist(
+        result.transactions, result.wallet, result.payload, prior, [], "Why not put dining on the 6% card?", client=fake
+    )
+    assert out["mode"] == "agent" and out["plan"] is None
+    assert out["reply"].startswith("Dining is already")
+    # Context rebuilt from ground truth: seed, prior plan, then the question + chat instructions.
+    sent = fake.requests[0]["messages"]
+    assert "engine_scored_baselines" in sent[1]["content"]
+    assert "My current recommendation" in sent[2]["content"] and "uob_one" in sent[2]["content"]
+    assert sent[-1]["content"].startswith("Why not put dining") and "in conversation with the cardholder" in sent[-1]["content"]
+    assert [c["name"] for c in out["trace"][0]["tool_calls"]] == ["score_allocation"]
+    assert fake.requests[1]["tools"] is None  # one scoring round, then the reply
+
+
+def test_chat_turn_can_revise_the_plan_and_is_re_verified():
+    raw = catalog.fixture("sg_multi_card_cycle")
+    result = analyze(raw["transactions"], raw["wallet"])
+    revised = {
+        "headline": "Two rules: groceries on UOB One, everything else on OCBC 365.",
+        "recommended_rules": [{"category": "groceries", "card_id": "uob_one", "rationale": "10%."}],
+        "default_card_id": "ocbc_365",
+        "projected_rewards": 5.0,  # wrong on purpose; the engine overrides
+        "reasoning_summary": "Simpler as asked.",
+        "watch_outs": ["OCBC needs $800/mo."],
+    }
+    fake = _ScriptedClient([
+        _assistant(content="Sure - here is a simpler version.\n```json\n" + json.dumps(revised) + "\n```"),
+    ])
+    history = [{"role": "user", "text": "hi"}, {"role": "assistant", "text": "hello"}]
+    out = advisor_module.chat_with_strategist(
+        result.transactions, result.wallet, result.payload, None, history, "Give me a 2-rule version.", client=fake
+    )
+    assert out["mode"] == "agent" and out["plan"] is not None
+    assert out["reply"] == "Sure - here is a simpler version."
+    expected = score_strategy(result.transactions, result.wallet, {"groceries": "uob_one"}, "ocbc_365").total_reward
+    assert out["plan"]["verified_rewards"] == pytest.approx(round(expected, 2))
+    assert out["plan"]["model_claimed_rewards"] == 5.0
+    assert out["plan"]["path"] == "chat" and out["plan"]["best_engine_plan"]["total_reward"] >= out["plan"]["verified_rewards"]
+    sent = fake.requests[0]["messages"]
+    assert [m["role"] for m in sent[:5]] == ["system", "user", "assistant", "user", "assistant"]  # seed, no-plan note, history
+    assert "not produced a recommendation" in sent[2]["content"]
+
+
+def test_chat_route_persists_history_and_updates_the_plan(client, monkeypatch):
+    from app.analysis import analyze as _analyze
+
+    raw = catalog.fixture("dining_heavy_cycle")
+    session = store.put(_analyze(raw["transactions"], raw["wallet"]))
+    calls = []
+
+    def fake_chat(transactions, wallet, dashboard, prior, history, message, client=None):
+        calls.append({"prior": prior, "history": list(history), "message": message})
+        plan = None
+        if "simpler" in message:
+            plan = {"mode": "agent", "headline": "Simpler.", "rules": [], "verified_rewards": 1.0, "trace": [{"turn": 1}], "watch_outs": [], "reasoning_summary": "", "default_card_id": "", "default_card_name": ""}
+        return {"mode": "agent", "reply": f"echo: {message}", "plan": plan, "trace": [], "detail": ""}
+
+    monkeypatch.setattr("app.strategist_routes.chat_with_strategist", fake_chat)
+
+    assert client.get(f"/api/advisor/{session.id}/chat").json() == {"history": []}
+    first = client.post(f"/api/advisor/{session.id}/chat", json={"message": "why?"}).json()
+    assert first["reply"] == "echo: why?" and first["plan"] is None
+    assert [m["role"] for m in first["history"]] == ["user", "assistant"]
+
+    second = client.post(f"/api/advisor/{session.id}/chat", json={"message": "make it simpler"}).json()
+    assert second["plan"]["headline"] == "Simpler."
+    assert calls[1]["history"][0]["text"] == "why?"  # earlier turns were passed back in
+    assert store.get(session.id).advisor["headline"] == "Simpler."  # the session's plan was replaced
+    assert len(second["history"]) == 4
+
+    assert client.post("/api/advisor/nope/chat", json={"message": "x"}).status_code == 404
+    assert client.post(f"/api/advisor/{session.id}/chat", json={"message": ""}).status_code == 422
+
+
 def test_chat_client_raises_provider_error_with_status(monkeypatch):
     import httpx
 
@@ -285,3 +435,18 @@ def test_chat_client_raises_provider_error_with_status(monkeypatch):
     with pytest.raises(advisor_module.ProviderError) as info:
         advisor_module.ChatClient("k", "https://x.test/v1", "m").chat([{"role": "user", "content": "hi"}])
     assert info.value.status_code == 400 and "MissingSessionID" in str(info.value)
+
+
+# --- Months: several analysed cycles held at once ---
+
+
+def test_upload_month_takes_label_and_derives_period(client):
+    with (SAMPLES / "uob_one_statement.pdf").open("rb") as fh:
+        data = client.post(
+            "/api/analyze/upload",
+            files={"files": ("uob_one_statement.pdf", fh, "application/pdf")},
+            data={"label": "My UOB month"},
+        ).json()
+    assert data["label"] == "My UOB month"
+    assert data["period"]["key"]
+    assert data["source"]["cycle_label"] == data["period"]["label"]

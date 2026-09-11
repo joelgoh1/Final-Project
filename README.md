@@ -21,6 +21,12 @@ python -m venv .venv
 
 Open <http://127.0.0.1:8000> and click **Load demo fixture**.
 
+Every statement you analyze becomes a **month** you can keep alongside others: load a
+fixture or upload a PDF, then click **+ Add month** to add the next one. Month tabs let
+you switch between them, rename or remove any month, and an *Across your months* table
+totals spend, rewards and missed value once you hold two or more. Months live in memory
+only (30 minutes of inactivity each) and disappear when the process exits.
+
 The AI strategist needs an OpenCode key. Copy `.env.example` to `.env` and set
 `OPENCODE_API_KEY`. Without it the app runs fully local - the dashboard, CSV export and
 rules-engine cheat sheet are unaffected; the strategist card simply says it is unavailable.
@@ -45,7 +51,7 @@ python tools/analyze_cli.py --fixture sg_multi_card_cycle \
 
 1. Open the app. Point at the privacy pill: *no bank logins, in-memory only.*
 2. Click **Load demo fixture** on the 3-card cycle. Time it - dashboard in under a second.
-3. Read the headline: **"$66.44 missed this cycle"** on $2,822 of spend. Ask: *"Would you
+3. Read the headline: **"$72.24 missed this cycle"** on $2,822 of spend. Ask: *"Would you
    want to know this number for your own cards?"*
 4. Scroll to **Suboptimal transactions**: groceries on DBS Live Fresh instead of UOB One
    ($17.88 on one NTUC trip). Ask: *"Did you know that was the wrong card?"*
@@ -65,7 +71,7 @@ with `python tools/make_sample_pdfs.py`).
 
 ```
 app/
-  main.py            FastAPI routes: bootstrap, analyze (fixture / upload), advisor, CSV, session
+  main.py            FastAPI routes: bootstrap, analyze (fixture / upload), months CRUD, advisor, CSV
   analysis.py        pipeline: redact -> categorize -> score actual -> allocate optimal -> payload
   rules_engine.py    pure reward maths: caps, minimum spends, optimal allocation, strategy scoring
   categorize.py      keyword rules with General Spend guardrail (never fails on an unknown merchant)
@@ -73,7 +79,7 @@ app/
   advisor.py         LLM agent (OpenAI-style function calling over httpx) whose tools are the rules engine
   wallet.py          3-rule cheat sheet from the optimal allocation
   export.py          CSV audit
-  session_store.py   in-memory, TTL 30 min, no disk
+  session_store.py   in-memory months (one per analysis), TTL 30 min from last touch, no disk
   parsing/           pdfplumber text -> date / merchant / amount rows for DBS, OCBC, UOB layouts
 data/
   cards.json         card profiles + stated v1 assumptions (the only reward "API")
@@ -90,11 +96,11 @@ tests/               engine known-answer, categorizer, parser, API + stubbed adv
 
 - **Rewards earned** - each transaction on the card it was actually charged to, scored
   chronologically with that card's category rate, monthly cap and minimum spend.
-- **Optimal card yield** - the same spend re-allocated across the wallet. For every
-  combination of cards that could be pushed to their minimum spend, transactions are
-  assigned greedily (largest opportunity first, so it gets the cap headroom), then the
-  cheapest lines are moved to top up minimums. Best feasible combination wins. It is an
-  upper bound a human cannot fully execute, and the UI says so.
+- **Optimal card yield** - the same spend re-allocated across the wallet, the better of
+  two searches: a cap-aware greedy per-transaction pass (for every combination of cards
+  that could be pushed to their minimum spend), and an exhaustive search over every plan
+  with up to three category rules plus a default card. The greedy pass is a heuristic and
+  the exact rule search sometimes beats it, so "optimal" is never below a plan we can name.
 - **AI strategist** - a category-level plan (three rules + a default card) a person *can*
   follow. The model explores plans with `score_allocation`, a tool that runs the engine;
   the server re-scores the final recommendation, so the displayed projection is never the
@@ -107,7 +113,8 @@ tests/               engine known-answer, categorizer, parser, API + stubbed adv
 
 - No credentials are requested or stored; there is no bank connection.
 - Redaction runs on the raw statement text before categorization.
-- Sessions live in a process dict for 30 minutes and die with the process.
+- Months (analysed statements) live in a process dict for 30 minutes after they were
+  last viewed and die with the process. `DELETE /api/months` drops them all at once.
 - With the strategist enabled, only redacted rows (date, merchant, amount, category,
   card used) are sent to the model provider - the UI states this next to the toggle.
 
@@ -125,10 +132,11 @@ Any OpenAI-compatible endpoint works. OpenCode Go additionally requires an
 `x-opencode-session` header; the client sends one stable id per strategist run, which is
 harmless for other providers. Google keys are reserved slots, unused in v1.
 
-Measured on 2026-09-11 with `deepseek-v4.1-flash`: the strategist ran the full tool loop,
-scored 8 candidate strategies against the engine and returned in about 40 s. The dashboard
-itself renders in well under a second; the strategist card fills in asynchronously, so the
-sub-2-minute task-completion target is unaffected.
+Measured on 2026-09-11 with `deepseek-v4.1-flash` at the provider's default reasoning
+depth: about 17 s for the full tool loop (down from ~94 s before the engine started handing
+the model exhaustive baselines and the loop capped scoring at one round). The dashboard
+itself renders in well under a second; the strategist card fills in asynchronously.
+`python tools/time_advisor.py` prints the per-turn token and latency audit.
 
 ## Out of scope (v1)
 
