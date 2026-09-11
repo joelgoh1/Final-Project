@@ -277,4 +277,7 @@ def index() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html")
 
 
+from .strategist_routes import router as strategist_router  # noqa: E402 - talk-back chat with the strategist
+
+app.include_router(strategist_router)
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")

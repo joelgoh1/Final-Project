@@ -51,7 +51,7 @@ python tools/analyze_cli.py --fixture sg_multi_card_cycle \
 
 1. Open the app. Point at the privacy pill: *no bank logins, in-memory only.*
 2. Click **Load demo fixture** on the 3-card cycle. Time it - dashboard in under a second.
-3. Read the headline: **"$66.44 missed this cycle"** on $2,822 of spend. Ask: *"Would you
+3. Read the headline: **"$72.24 missed this cycle"** on $2,822 of spend. Ask: *"Would you
    want to know this number for your own cards?"*
 4. Scroll to **Suboptimal transactions**: groceries on DBS Live Fresh instead of UOB One
    ($17.88 on one NTUC trip). Ask: *"Did you know that was the wrong card?"*
@@ -96,11 +96,11 @@ tests/               engine known-answer, categorizer, parser, API + stubbed adv
 
 - **Rewards earned** - each transaction on the card it was actually charged to, scored
   chronologically with that card's category rate, monthly cap and minimum spend.
-- **Optimal card yield** - the same spend re-allocated across the wallet. For every
-  combination of cards that could be pushed to their minimum spend, transactions are
-  assigned greedily (largest opportunity first, so it gets the cap headroom), then the
-  cheapest lines are moved to top up minimums. Best feasible combination wins. It is an
-  upper bound a human cannot fully execute, and the UI says so.
+- **Optimal card yield** - the same spend re-allocated across the wallet, the better of
+  two searches: a cap-aware greedy per-transaction pass (for every combination of cards
+  that could be pushed to their minimum spend), and an exhaustive search over every plan
+  with up to three category rules plus a default card. The greedy pass is a heuristic and
+  the exact rule search sometimes beats it, so "optimal" is never below a plan we can name.
 - **AI strategist** - a category-level plan (three rules + a default card) a person *can*
   follow. The model explores plans with `score_allocation`, a tool that runs the engine;
   the server re-scores the final recommendation, so the displayed projection is never the
@@ -132,10 +132,11 @@ Any OpenAI-compatible endpoint works. OpenCode Go additionally requires an
 `x-opencode-session` header; the client sends one stable id per strategist run, which is
 harmless for other providers. Google keys are reserved slots, unused in v1.
 
-Measured on 2026-09-11 with `deepseek-v4.1-flash`: the strategist ran the full tool loop,
-scored 8 candidate strategies against the engine and returned in about 40 s. The dashboard
-itself renders in well under a second; the strategist card fills in asynchronously, so the
-sub-2-minute task-completion target is unaffected.
+Measured on 2026-09-11 with `deepseek-v4.1-flash` at the provider's default reasoning
+depth: about 17 s for the full tool loop (down from ~94 s before the engine started handing
+the model exhaustive baselines and the loop capped scoring at one round). The dashboard
+itself renders in well under a second; the strategist card fills in asynchronously.
+`python tools/time_advisor.py` prints the per-turn token and latency audit.
 
 ## Out of scope (v1)
 
