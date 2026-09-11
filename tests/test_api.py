@@ -438,3 +438,79 @@ def test_chat_client_raises_provider_error_with_status(monkeypatch):
 
 
 # --- Months: several analysed cycles held at once ---
+
+
+def test_months_crud_list_rename_delete_and_totals(client):
+    first = client.post("/api/analyze/fixture", json={"fixture_id": "sg_multi_card_cycle"}).json()
+    assert first["label"] == "Aug 2026"
+    assert first["period"]["key"] == "2026-08"
+
+    second = client.post(
+        "/api/analyze/fixture", json={"fixture_id": "dining_heavy_cycle", "label": "  Dining   test "}
+    ).json()
+    assert second["label"] == "Dining test"
+
+    listing = client.get("/api/months").json()
+    assert listing["count"] == 2
+    assert [m["session_id"] for m in listing["months"]] == sorted(
+        [first["session_id"], second["session_id"]],
+        key=lambda sid: next(m["period"]["key"] for m in listing["months"] if m["session_id"] == sid),
+    )
+    totals = listing["totals"]
+    assert totals["total_spend"] == round(
+        first["summary"]["total_spend"] + second["summary"]["total_spend"], 2
+    )
+    assert totals["transaction_count"] == (
+        first["summary"]["transaction_count"] + second["summary"]["transaction_count"]
+    )
+    assert totals["missed_value"] > 0
+
+    renamed = client.patch(f"/api/months/{first['session_id']}", json={"label": "August real"}).json()
+    assert renamed["label"] == "August real"
+    assert client.get(f"/api/months/{first['session_id']}").json()["label"] == "August real"
+    assert client.patch(f"/api/months/{first['session_id']}", json={"label": "   "}).status_code == 422
+
+    full = client.get(f"/api/months/{second['session_id']}").json()
+    assert full["summary"] == second["summary"]
+    assert full["advisor"] is None
+
+    assert client.delete(f"/api/months/{first['session_id']}").json() == {"dropped": True}
+    assert client.get(f"/api/months/{first['session_id']}").status_code == 404
+    assert client.get("/api/months").json()["count"] == 1
+
+    assert client.delete("/api/months").json() == {"dropped": 1}
+    assert client.get("/api/months").json() == {
+        "months": [],
+        "count": 0,
+        "totals": {
+            "total_spend": 0.0, "actual_rewards": 0.0, "optimal_rewards": 0.0,
+            "missed_value": 0.0, "transaction_count": 0,
+            "actual_yield_pct": 0.0, "optimal_yield_pct": 0.0,
+        },
+    }
+
+
+def test_statement_period_labels_single_and_multi_month():
+    from app.analysis import statement_period
+    from app.models import Transaction
+
+    def txn(day):
+        return Transaction(id=day, date=day, merchant="x", amount=1.0, card_id="uob_one")
+
+    assert statement_period([txn("2026-08-03"), txn("2026-08-29")])["label"] == "Aug 2026"
+    span = statement_period([txn("2026-08-25"), txn("2026-09-02")])
+    assert span["label"] == "Aug - Sep 2026" and span["key"] == "2026-08"
+    assert statement_period([txn("2026-12-25"), txn("2027-01-02")])["label"] == "Dec 2026 - Jan 2027"
+    assert statement_period([txn("garbage")])["label"] == ""
+
+
+def test_upload_month_takes_label_and_derives_period(client):
+    with (SAMPLES / "uob_one_statement.pdf").open("rb") as fh:
+        data = client.post(
+            "/api/analyze/upload",
+            files={"files": ("uob_one_statement.pdf", fh, "application/pdf")},
+            data={"label": "My UOB month"},
+        ).json()
+    assert data["label"] == "My UOB month"
+    assert data["period"]["key"]
+    assert data["source"]["cycle_label"] == data["period"]["label"]

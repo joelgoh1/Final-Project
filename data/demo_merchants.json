@@ -1,0 +1,536 @@
+{
+  "schema_version": 1,
+  "note": "Synthetic merchant pool for the configurable demo generator. Every merchant under a category must categorize to that category via merchant_rules.json (tests enforce this). Amounts are typical SGD ranges [low, high]. No real cardholder, account or card number appears here.",
+  "categories": {
+    "dining": [
+      {
+        "name": "STARBUCKS RAFFLES CITY",
+        "range": [
+          6.5,
+          18.0
+        ]
+      },
+      {
+        "name": "TOAST BOX BUGIS JUNCTION",
+        "range": [
+          5.0,
+          14.0
+        ]
+      },
+      {
+        "name": "YA KUN KAYA TOAST TAMPINES",
+        "range": [
+          4.8,
+          12.0
+        ]
+      },
+      {
+        "name": "MCDONALD'S JURONG POINT",
+        "range": [
+          7.0,
+          24.0
+        ]
+      },
+      {
+        "name": "KFC BEDOK MALL",
+        "range": [
+          8.0,
+          28.0
+        ]
+      },
+      {
+        "name": "SUBWAY ONE RAFFLES PLACE",
+        "range": [
+          8.5,
+          16.0
+        ]
+      },
+      {
+        "name": "KOUFU CLEMENTI MALL",
+        "range": [
+          5.5,
+          15.0
+        ]
+      },
+      {
+        "name": "FOOD REPUBLIC VIVOCITY",
+        "range": [
+          6.0,
+          18.0
+        ]
+      },
+      {
+        "name": "MAXWELL HAWKER CENTRE",
+        "range": [
+          4.0,
+          14.0
+        ]
+      },
+      {
+        "name": "DIN TAI FUNG PARAGON",
+        "range": [
+          45.0,
+          130.0
+        ]
+      },
+      {
+        "name": "CRYSTAL JADE HOLLAND VILLAGE",
+        "range": [
+          40.0,
+          120.0
+        ]
+      },
+      {
+        "name": "PARADISE DYNASTY ION ORCHARD",
+        "range": [
+          50.0,
+          140.0
+        ]
+      },
+      {
+        "name": "SUSHI TEI SERANGOON NEX",
+        "range": [
+          35.0,
+          95.0
+        ]
+      },
+      {
+        "name": "GENKI SUSHI WESTGATE",
+        "range": [
+          22.0,
+          60.0
+        ]
+      },
+      {
+        "name": "HAIDILAO HOTPOT CLARKE QUAY",
+        "range": [
+          80.0,
+          180.0
+        ]
+      },
+      {
+        "name": "PASTAMANIA PLAZA SINGAPURA",
+        "range": [
+          14.0,
+          38.0
+        ]
+      },
+      {
+        "name": "SWEE CHOON TIM SUM",
+        "range": [
+          25.0,
+          70.0
+        ]
+      },
+      {
+        "name": "GRABFOOD SINGAPORE",
+        "range": [
+          14.0,
+          48.0
+        ]
+      },
+      {
+        "name": "FOODPANDA SG",
+        "range": [
+          12.0,
+          42.0
+        ]
+      },
+      {
+        "name": "DELIVEROO SINGAPORE",
+        "range": [
+          18.0,
+          55.0
+        ]
+      },
+      {
+        "name": "TIONG BAHRU BAKERY",
+        "range": [
+          8.0,
+          26.0
+        ]
+      },
+      {
+        "name": "CEDELE RAFFLES PLACE",
+        "range": [
+          9.0,
+          24.0
+        ]
+      }
+    ],
+    "groceries": [
+      {
+        "name": "NTUC FAIRPRICE FINEST #03-11",
+        "range": [
+          35.0,
+          210.0
+        ]
+      },
+      {
+        "name": "FAIRPRICE XTRA JEM",
+        "range": [
+          40.0,
+          240.0
+        ]
+      },
+      {
+        "name": "COLD STORAGE JELITA",
+        "range": [
+          30.0,
+          160.0
+        ]
+      },
+      {
+        "name": "SHENG SIONG SUPERMARKET",
+        "range": [
+          20.0,
+          120.0
+        ]
+      },
+      {
+        "name": "GIANT HYPERMARKET TAMPINES",
+        "range": [
+          30.0,
+          180.0
+        ]
+      },
+      {
+        "name": "PRIME SUPERMARKET BEDOK",
+        "range": [
+          15.0,
+          90.0
+        ]
+      },
+      {
+        "name": "REDMART ONLINE GROCERIES",
+        "range": [
+          45.0,
+          190.0
+        ]
+      },
+      {
+        "name": "AMAZON FRESH SG",
+        "range": [
+          40.0,
+          150.0
+        ]
+      },
+      {
+        "name": "GRABMART SINGAPORE",
+        "range": [
+          18.0,
+          70.0
+        ]
+      },
+      {
+        "name": "PANDAMART SG",
+        "range": [
+          15.0,
+          65.0
+        ]
+      }
+    ],
+    "transport": [
+      {
+        "name": "SIMPLYGO*BUS/MRT",
+        "range": [
+          20.0,
+          65.0
+        ]
+      },
+      {
+        "name": "TRANSITLINK TOP UP",
+        "range": [
+          20.0,
+          50.0
+        ]
+      },
+      {
+        "name": "GRAB RIDES SINGAPORE",
+        "range": [
+          8.0,
+          34.0
+        ]
+      },
+      {
+        "name": "GOJEK SINGAPORE",
+        "range": [
+          7.0,
+          30.0
+        ]
+      },
+      {
+        "name": "TADA MOBILITY",
+        "range": [
+          8.0,
+          32.0
+        ]
+      },
+      {
+        "name": "COMFORTDELGRO TAXI",
+        "range": [
+          9.0,
+          36.0
+        ]
+      },
+      {
+        "name": "ZIG BY CDG RIDE",
+        "range": [
+          10.0,
+          30.0
+        ]
+      },
+      {
+        "name": "ESSO BUKIT TIMAH",
+        "range": [
+          60.0,
+          120.0
+        ]
+      },
+      {
+        "name": "SHELL WOODLANDS",
+        "range": [
+          60.0,
+          125.0
+        ]
+      },
+      {
+        "name": "CALTEX UPPER THOMSON",
+        "range": [
+          55.0,
+          115.0
+        ]
+      },
+      {
+        "name": "HDB CARPARK SEASON",
+        "range": [
+          80.0,
+          140.0
+        ]
+      }
+    ],
+    "utilities": [
+      {
+        "name": "SP SERVICES LTD GIRO",
+        "range": [
+          120.0,
+          280.0
+        ]
+      },
+      {
+        "name": "GENECO ELECTRICITY",
+        "range": [
+          90.0,
+          220.0
+        ]
+      },
+      {
+        "name": "KEPPEL ELECTRIC BILL",
+        "range": [
+          90.0,
+          210.0
+        ]
+      },
+      {
+        "name": "SINGTEL MOBILE BILL",
+        "range": [
+          35.0,
+          95.0
+        ]
+      },
+      {
+        "name": "STARHUB FIBRE BROADBAND",
+        "range": [
+          40.0,
+          80.0
+        ]
+      },
+      {
+        "name": "M1 LIMITED",
+        "range": [
+          25.0,
+          70.0
+        ]
+      },
+      {
+        "name": "SIMBA TELECOM",
+        "range": [
+          10.0,
+          30.0
+        ]
+      },
+      {
+        "name": "MYREPUBLIC BROADBAND",
+        "range": [
+          35.0,
+          70.0
+        ]
+      },
+      {
+        "name": "TOWN COUNCIL CONSERVANCY",
+        "range": [
+          50.0,
+          110.0
+        ]
+      }
+    ],
+    "shopping": [
+      {
+        "name": "SHOPEE SG PTE LTD",
+        "range": [
+          15.0,
+          160.0
+        ]
+      },
+      {
+        "name": "LAZADA SINGAPORE",
+        "range": [
+          18.0,
+          150.0
+        ]
+      },
+      {
+        "name": "AMAZON.SG",
+        "range": [
+          20.0,
+          180.0
+        ]
+      },
+      {
+        "name": "QOO10 SINGAPORE",
+        "range": [
+          12.0,
+          90.0
+        ]
+      },
+      {
+        "name": "TAOBAO WORLD",
+        "range": [
+          10.0,
+          120.0
+        ]
+      },
+      {
+        "name": "UNIQLO SOMERSET",
+        "range": [
+          30.0,
+          160.0
+        ]
+      },
+      {
+        "name": "ZARA ION ORCHARD",
+        "range": [
+          40.0,
+          220.0
+        ]
+      },
+      {
+        "name": "H&M ORCHARD BUILDING",
+        "range": [
+          25.0,
+          130.0
+        ]
+      },
+      {
+        "name": "MUJI PLAZA SINGAPURA",
+        "range": [
+          15.0,
+          110.0
+        ]
+      },
+      {
+        "name": "DECATHLON SINGAPORE LAB",
+        "range": [
+          20.0,
+          140.0
+        ]
+      },
+      {
+        "name": "COTTON ON BUGIS+",
+        "range": [
+          20.0,
+          90.0
+        ]
+      }
+    ]
+  },
+  "unmapped": [
+    {
+      "name": "ORCHID VALLEY FLORIST",
+      "range": [
+        35.0,
+        90.0
+      ]
+    },
+    {
+      "name": "WELLNESS STUDIO 88 PTE LTD",
+      "range": [
+        60.0,
+        180.0
+      ]
+    },
+    {
+      "name": "SUNRISE KOPI STALL 12",
+      "range": [
+        3.5,
+        9.0
+      ]
+    },
+    {
+      "name": "BUKIT TIMAH VET CLINIC",
+      "range": [
+        45.0,
+        220.0
+      ]
+    },
+    {
+      "name": "LITTLE STEPS ENRICHMENT",
+      "range": [
+        120.0,
+        380.0
+      ]
+    },
+    {
+      "name": "JOO CHIAT LAUNDRETTE",
+      "range": [
+        12.0,
+        40.0
+      ]
+    },
+    {
+      "name": "PAYA LEBAR DENTAL SURGERY",
+      "range": [
+        80.0,
+        260.0
+      ]
+    },
+    {
+      "name": "GOLDEN VILLAGE PLAZA SING",
+      "range": [
+        13.0,
+        42.0
+      ]
+    },
+    {
+      "name": "NIGHT SAFARI ADMISSION",
+      "range": [
+        50.0,
+        120.0
+      ]
+    },
+    {
+      "name": "THE BOOK NOOK KATONG",
+      "range": [
+        18.0,
+        85.0
+      ]
+    },
+    {
+      "name": "ARTISAN POTTERY WORKSHOP",
+      "range": [
+        45.0,
+        150.0
+      ]
+    }
+  ]
+}

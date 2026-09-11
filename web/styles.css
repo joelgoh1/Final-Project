@@ -108,6 +108,35 @@ main { max-width: 1080px; margin: 0 auto; padding: 1.25rem 1rem 4rem; }
 .small { font-size: .8rem; }
 .error { color: var(--warn); font-size: .85rem; }
 
+.start .scenario-list { display: grid; gap: .5rem; margin: .9rem 0; }
+.scenario {
+  display: flex; gap: .8rem; align-items: flex-start; cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--radius); padding: .7rem .9rem; background: var(--surface-2);
+}
+.scenario:hover { border-color: var(--brand); }
+.scenario:has(input:checked) { border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); }
+.scenario input { margin-top: .3rem; accent-color: var(--brand); }
+.scenario h4 { margin: 0 0 .15rem; font-size: .9rem; }
+.scenario p { color: var(--muted); font-size: .8rem; margin: 0; }
+.start .actions { display: flex; flex-wrap: wrap; gap: .6rem 1rem; align-items: flex-start; }
+.tune { flex: 1 1 100%; font-size: .85rem; }
+.tune summary { cursor: pointer; color: var(--muted); font-size: .82rem; }
+.tune.dimmed .tune-grid { opacity: .45; }
+.tune-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .4rem 1.2rem; margin-top: .6rem; }
+.tune-wide { grid-column: 1 / -1; }
+.tune .field > span:first-child { display: flex; justify-content: space-between; gap: .5rem; }
+.tune .field select, .tune .field input[type=number] {
+  display: block; margin-top: .25rem; padding: .4rem; border-radius: 8px; border: 1px solid var(--line);
+  width: 100%; min-width: 0; background: var(--surface-2); color: var(--ink); box-sizing: border-box;
+}
+.tune .field input[type=range] { display: block; width: 100%; margin: .45rem 0 .2rem; accent-color: var(--brand); }
+.tune .held-cards { margin-bottom: 0; }
+.mix { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .3rem .9rem; margin-top: .35rem; }
+.mix-row { display: grid; grid-template-columns: 6rem 1fr 3rem; gap: .5rem; align-items: center; font-size: .8rem; color: var(--ink); }
+.mix-row input[type=range] { margin: 0; accent-color: var(--brand); }
+.mix-row output { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mix-row.zero { opacity: .55; }
+#tune-problems:empty { display: none; }
 .start .fixture-list { display: grid; gap: .6rem; margin: .9rem 0; }
 .fixture {
   display: flex; gap: 1rem; align-items: center; justify-content: space-between;
@@ -202,3 +231,24 @@ td.missed { color: var(--warn); font-weight: 600; }
 .disclosure ul { margin: .7rem 0 0; padding-left: 1.1rem; color: var(--muted); font-size: .8rem; }
 .disclosure li { margin-bottom: .3rem; }
 .disclosure-list { margin: .4rem 0 .4rem 1.1rem; padding: 0; }
+
+/* Months: several analysed cycles held at once */
+.months-return { display: flex; justify-content: space-between; align-items: center; gap: .6rem; margin-bottom: .8rem; padding-bottom: .7rem; border-bottom: 1px solid var(--line); }
+.field input[type=text] {
+  display: block; width: 100%; margin-top: .3rem; padding: .45rem .6rem; font-size: .85rem;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink);
+}
+.month-bar { display: flex; flex-wrap: wrap; gap: .6rem; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.month-tabs { display: flex; flex-wrap: wrap; gap: .4rem; }
+.month-bar-actions { display: flex; gap: .4rem; }
+.month-tab {
+  display: inline-flex; align-items: center; gap: .5rem; padding: .4rem .75rem; font-size: .82rem;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); cursor: pointer;
+}
+.month-tab:hover { border-color: var(--brand); }
+.month-tab.active { border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); font-weight: 600; }
+.month-tab .missed { color: var(--warn); font-variant-numeric: tabular-nums; font-size: .76rem; }
+.overview tfoot td { font-weight: 600; border-top: 2px solid var(--line); }
+.overview tr.active td:first-child { color: var(--brand); font-weight: 600; }
+.overview tbody tr { cursor: pointer; }
+.overview tbody tr:hover td { background: var(--track); }

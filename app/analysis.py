@@ -10,6 +10,7 @@ in app.session_store (TTL'd, never written to disk).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Optional, Sequence
 
 from . import catalog
@@ -47,19 +48,60 @@ def build_transactions(raw_rows: Sequence[dict], source: str) -> list[Transactio
     return transactions
 
 
+def statement_period(transactions: Sequence[Transaction]) -> dict:
+    """Which month(s) a set of rows covers, derived from the transaction dates.
+
+    Returns a sortable key ("2026-08"), a human label ("Aug 2026" or
+    "Aug - Sep 2026") and the first / last dates seen. Unparseable dates are
+    ignored; with no usable dates every field is empty.
+    """
+    parsed: list[date] = []
+    for txn in transactions:
+        try:
+            parsed.append(date.fromisoformat(str(txn.date)[:10]))
+        except ValueError:
+            continue
+    if not parsed:
+        return {"key": "", "label": "", "start": None, "end": None}
+    start, end = min(parsed), max(parsed)
+    if (start.year, start.month) == (end.year, end.month):
+        label = start.strftime("%b %Y")
+    elif start.year == end.year:
+        label = f"{start.strftime('%b')} - {end.strftime('%b %Y')}"
+    else:
+        label = f"{start.strftime('%b %Y')} - {end.strftime('%b %Y')}"
+    return {"key": start.strftime("%Y-%m"), "label": label,
+            "start": start.isoformat(), "end": end.isoformat()}
+
+
 def _resolve_wallet(
-    transactions: Sequence[Transaction], wallet_ids: Optional[Sequence[str]]
+    transactions: Sequence[Transaction],
+    wallet_ids: Optional[Sequence[str]],
+    known: Optional[dict[str, CardProfile]] = None,
 ) -> list[CardProfile]:
     """Wallet = the requested cards, plus any card the statement actually used."""
-    known = catalog.cards()
+    known = known or catalog.cards()
     ids: list[str] = []
     for card_id in list(wallet_ids or []) + [t.card_id for t in transactions]:
         if card_id in known and card_id not in ids:
             ids.append(card_id)
     if not ids:
         ids = list(known)
-    # Keep cards.json declaration order so ties break deterministically.
+    # Keep cards.json declaration order so ties break deterministically; cards
+    # the caller defined on the fly keep the caller's order after the bundled ones.
     return [known[cid] for cid in known if cid in ids]
+
+
+def merged_cards(card_overrides: Optional[dict[str, CardProfile]] = None) -> dict[str, CardProfile]:
+    """Bundled catalog with the caller's edited or brand-new cards layered on top.
+
+    An override that reuses a bundled id replaces that card in place (so the
+    statement's own spend is re-scored under the edited rules); new ids append.
+    """
+    cards = dict(catalog.cards())
+    for card_id, profile in (card_overrides or {}).items():
+        cards[card_id] = profile
+    return cards
 
 
 def _category_breakdown(transactions: Sequence[Transaction], total_spend: float) -> list[dict]:
@@ -84,9 +126,13 @@ def _category_breakdown(transactions: Sequence[Transaction], total_spend: float)
 
 
 def _card_breakdown(
-    wallet: Sequence[CardProfile], actual: Allocation, optimal: Allocation
+    wallet: Sequence[CardProfile],
+    actual: Allocation,
+    optimal: Allocation,
+    customised: Optional[set[str]] = None,
 ) -> list[dict]:
     rows = []
+    customised = customised or set()
     for card in wallet:
         actual_ledger = actual.ledgers.get(card.id)
         optimal_ledger = optimal.ledgers.get(card.id)
@@ -104,6 +150,9 @@ def _card_breakdown(
                 "min_spend_met": card.min_spend == 0 or actual_spend + 1e-9 >= card.min_spend,
                 "monthly_cap": card.monthly_cap,
                 "cap_reached": card.id in actual.capped_cards,
+                "base_rate": card.base_rate,
+                "category_rates": dict(card.category_rates),
+                "customised": card.id in customised,
             }
         )
     return rows
@@ -153,21 +202,35 @@ def _wallet_assumptions(wallet: Sequence[CardProfile]) -> list[str]:
     return notes
 
 
+def _custom_assumptions(wallet: Sequence[CardProfile], customised: set[str]) -> list[str]:
+    return [
+        f"{card.name}: rules edited in the wallet workbench - this is your model of the card, not the issuer's published terms."
+        for card in wallet
+        if card.id in customised
+    ]
+
+
 def analyze(
     raw_rows: Sequence[dict],
     wallet_ids: Optional[Sequence[str]] = None,
     source: str = "fixture",
     source_meta: Optional[dict] = None,
     parse_quality: Optional[ParseQuality] = None,
+    card_overrides: Optional[dict[str, CardProfile]] = None,
 ) -> AnalysisResult:
-    """Run the full pipeline and assemble the dashboard payload."""
+    """Run the full pipeline and assemble the dashboard payload.
+
+    `card_overrides` lets the UI's wallet workbench edit a bundled card's rules
+    or add a card of its own; the engine scores everything under those rules.
+    """
     transactions = build_transactions(raw_rows, source)
     quality = parse_quality or ParseQuality()
     quality.rows_parsed = len(transactions)
     quality.general_spend_rows = categorize_all(transactions)
 
-    wallet = _resolve_wallet(transactions, wallet_ids)
-    cards = catalog.cards()
+    cards = merged_cards(card_overrides)
+    customised = set(card_overrides or {})
+    wallet = _resolve_wallet(transactions, wallet_ids, cards)
 
     actual = score_actual(transactions, cards)
     optimal = allocate_optimal(transactions, wallet)
@@ -185,8 +248,14 @@ def analyze(
     wallet_rules: list[WalletRule] = build_wallet_rules(transactions, optimal, cards)
     suboptimal = _suboptimal_rows(transactions, actual, optimal, cards)
 
+    period = statement_period(transactions)
+    meta = dict(source_meta or {"kind": source})
+    if not meta.get("cycle_label") and period["label"]:
+        meta["cycle_label"] = period["label"]
+
     payload = {
-        "source": source_meta or {"kind": source},
+        "source": meta,
+        "period": period,
         "summary": {
             "total_spend": total_spend,
             "transaction_count": len(transactions),
@@ -199,11 +268,11 @@ def analyze(
         },
         "wallet": [
             {"id": c.id, "name": c.name, "issuer": c.issuer, "min_spend": c.min_spend,
-             "monthly_cap": c.monthly_cap}
+             "monthly_cap": c.monthly_cap, "customised": c.id in customised}
             for c in wallet
         ],
         "categories": _category_breakdown(transactions, total_spend),
-        "cards": _card_breakdown(wallet, actual, optimal),
+        "cards": _card_breakdown(wallet, actual, optimal, customised),
         "suboptimal": suboptimal[:MAX_SUBOPTIMAL_ROWS],
         "suboptimal_count": len(suboptimal),
         "wallet_rules": [
@@ -222,7 +291,7 @@ def analyze(
             "general_spend_rows": quality.general_spend_rows,
             "notes": quality.notes,
         },
-        "assumptions": _wallet_assumptions(wallet),
+        "assumptions": _wallet_assumptions(wallet) + _custom_assumptions(wallet, customised),
     }
 
     # The CSV export needs the per-transaction verdict, so stash it on the rows.
