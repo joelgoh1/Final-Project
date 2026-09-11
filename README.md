@@ -21,6 +21,12 @@ python -m venv .venv
 
 Open <http://127.0.0.1:8000> and click **Load demo fixture**.
 
+Every statement you analyze becomes a **month** you can keep alongside others: load a
+fixture or upload a PDF, then click **+ Add month** to add the next one. Month tabs let
+you switch between them, rename or remove any month, and an *Across your months* table
+totals spend, rewards and missed value once you hold two or more. Months live in memory
+only (30 minutes of inactivity each) and disappear when the process exits.
+
 The AI strategist needs an OpenCode key. Copy `.env.example` to `.env` and set
 `OPENCODE_API_KEY`. Without it the app runs fully local - the dashboard, CSV export and
 rules-engine cheat sheet are unaffected; the strategist card simply says it is unavailable.
@@ -65,7 +71,7 @@ with `python tools/make_sample_pdfs.py`).
 
 ```
 app/
-  main.py            FastAPI routes: bootstrap, analyze (fixture / upload), advisor, CSV, session
+  main.py            FastAPI routes: bootstrap, analyze (fixture / upload), months CRUD, advisor, CSV
   analysis.py        pipeline: redact -> categorize -> score actual -> allocate optimal -> payload
   rules_engine.py    pure reward maths: caps, minimum spends, optimal allocation, strategy scoring
   categorize.py      keyword rules with General Spend guardrail (never fails on an unknown merchant)
@@ -73,7 +79,7 @@ app/
   advisor.py         LLM agent (OpenAI-style function calling over httpx) whose tools are the rules engine
   wallet.py          3-rule cheat sheet from the optimal allocation
   export.py          CSV audit
-  session_store.py   in-memory, TTL 30 min, no disk
+  session_store.py   in-memory months (one per analysis), TTL 30 min from last touch, no disk
   parsing/           pdfplumber text -> date / merchant / amount rows for DBS, OCBC, UOB layouts
 data/
   cards.json         card profiles + stated v1 assumptions (the only reward "API")
@@ -107,7 +113,8 @@ tests/               engine known-answer, categorizer, parser, API + stubbed adv
 
 - No credentials are requested or stored; there is no bank connection.
 - Redaction runs on the raw statement text before categorization.
-- Sessions live in a process dict for 30 minutes and die with the process.
+- Months (analysed statements) live in a process dict for 30 minutes after they were
+  last viewed and die with the process. `DELETE /api/months` drops them all at once.
 - With the strategist enabled, only redacted rows (date, merchant, amount, category,
   card used) are sent to the model provider - the UI states this next to the toggle.
 

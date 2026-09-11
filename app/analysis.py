@@ -10,6 +10,7 @@ in app.session_store (TTL'd, never written to disk).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Optional, Sequence
 
 from . import catalog
@@ -45,6 +46,32 @@ def build_transactions(raw_rows: Sequence[dict], source: str) -> list[Transactio
             )
         )
     return transactions
+
+
+def statement_period(transactions: Sequence[Transaction]) -> dict:
+    """Which month(s) a set of rows covers, derived from the transaction dates.
+
+    Returns a sortable key ("2026-08"), a human label ("Aug 2026" or
+    "Aug - Sep 2026") and the first / last dates seen. Unparseable dates are
+    ignored; with no usable dates every field is empty.
+    """
+    parsed: list[date] = []
+    for txn in transactions:
+        try:
+            parsed.append(date.fromisoformat(str(txn.date)[:10]))
+        except ValueError:
+            continue
+    if not parsed:
+        return {"key": "", "label": "", "start": None, "end": None}
+    start, end = min(parsed), max(parsed)
+    if (start.year, start.month) == (end.year, end.month):
+        label = start.strftime("%b %Y")
+    elif start.year == end.year:
+        label = f"{start.strftime('%b')} - {end.strftime('%b %Y')}"
+    else:
+        label = f"{start.strftime('%b %Y')} - {end.strftime('%b %Y')}"
+    return {"key": start.strftime("%Y-%m"), "label": label,
+            "start": start.isoformat(), "end": end.isoformat()}
 
 
 def _resolve_wallet(
@@ -185,8 +212,14 @@ def analyze(
     wallet_rules: list[WalletRule] = build_wallet_rules(transactions, optimal, cards)
     suboptimal = _suboptimal_rows(transactions, actual, optimal, cards)
 
+    period = statement_period(transactions)
+    meta = dict(source_meta or {"kind": source})
+    if not meta.get("cycle_label") and period["label"]:
+        meta["cycle_label"] = period["label"]
+
     payload = {
-        "source": source_meta or {"kind": source},
+        "source": meta,
+        "period": period,
         "summary": {
             "total_spend": total_spend,
             "transaction_count": len(transactions),
