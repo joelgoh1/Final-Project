@@ -1,3 +1,14 @@
+---
+title: Card Reward & Spend Optimizer
+emoji: 💳
+colorFrom: indigo
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+short_description: Find the cashback your card wallet left on the table
+---
+
 # Statement-Based Card Reward & Spend Optimizer (v1)
 
 Load a demo statement (or drop an unlocked DBS / OCBC / UOB PDF e-statement), and in
@@ -163,3 +174,37 @@ itself renders in well under a second; the strategist card fills in asynchronous
 
 Encrypted-PDF unlocking, live bank linking, OCR, live reward-rule APIs, product
 applications or referrals.
+
+## Deploy
+
+Hosted on a free [Hugging Face Space](https://huggingface.co/spaces) (Docker SDK). The
+`Dockerfile` at the repo root is the whole deployment: Spaces builds it on every push to
+the Space's `main` and restarts the container.
+
+First time only:
+
+```bash
+# 1. Create the Space on huggingface.co: SDK = Docker, hardware = CPU basic (free).
+# 2. Add the key under Space -> Settings -> Variables and secrets -> New secret:
+#      name  OPENCODE_API_KEY
+#      value sk-...
+#    Spaces injects it as an env var, which app/config.py already prefers over .env.
+# 3. Point this repo at the Space (needs a write token from huggingface.co/settings/tokens):
+git remote add space https://huggingface.co/spaces/<user>/<space-name>
+```
+
+Every deploy after that:
+
+```bash
+git push space main          # build logs stream in the Space's "Logs" tab
+```
+
+Notes:
+
+- The YAML block at the top of this README is the Space's config - Spaces requires it
+  there. GitHub renders it as a table; that is the only cost of keeping one README.
+- Free Spaces sleep after ~48h idle and wake on the next request (a slow first load).
+- Sessions are in-memory, so a rebuild drops any months a visitor was holding. That is
+  the same 30-minute promise as local, just with deploys as an extra reset.
+- `LLM_BASE_URL` / `LLM_MODEL` can go in the same panel as plain *variables* - they are
+  not secrets.
