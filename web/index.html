@@ -36,7 +36,42 @@
     </div>
     <h2 id="start-title">Start with a demo statement</h2>
     <p class="muted">One click to a full reward-leakage analysis. No file, no login, no account. Each statement you add becomes a month you can switch between and total up.</p>
-    <div id="fixture-list" class="fixture-list"></div>
+    <div id="scenario-list" class="scenario-list"></div>
+    <div class="actions">
+      <button type="button" id="demo-run" class="btn">Analyze this statement</button>
+      <details class="tune" id="tune">
+        <summary>Fine-tune</summary>
+        <p id="tune-fixed-note" class="muted small" hidden>This scenario is a fixed statement. Pick a generated one to change it.</p>
+        <div class="tune-grid">
+          <fieldset class="held-cards">
+            <legend>Cards in the wallet</legend>
+            <div id="tune-wallet"></div>
+          </fieldset>
+          <label class="field">
+            <span>Card habit</span>
+            <select id="tune-habit"></select>
+          </label>
+          <label class="field">
+            <span>Transactions <output id="tune-count-out"></output></span>
+            <input type="range" id="tune-count" step="1" />
+          </label>
+          <label class="field">
+            <span>Total spend (SGD)</span>
+            <input type="number" id="tune-spend" step="50" />
+          </label>
+          <div class="field tune-wide">
+            <span>Spend mix</span>
+            <div id="tune-mix" class="mix"></div>
+          </div>
+          <label class="field">
+            <span>Unfamiliar merchants <output id="tune-unmapped-out"></output></span>
+            <input type="range" id="tune-unmapped" step="1" />
+          </label>
+        </div>
+        <p class="muted small"><span id="tune-summary"></span> <span id="tune-seed"></span> &middot; <a href="#" id="tune-shuffle">Shuffle</a></p>
+        <p id="tune-problems" class="error"></p>
+      </details>
+    </div>
 
     <details class="upload">
       <summary>Or upload your own unlocked PDF e-statement</summary>
@@ -100,8 +135,10 @@
       <div>
         <h2 id="source-label"></h2>
         <p class="muted small" id="source-meta"></p>
+        <p class="muted small" id="demo-config-line" hidden></p>
       </div>
       <div class="source-actions">
+        <button id="reshuffle-btn" class="btn secondary" type="button" hidden>Reshuffle demo</button>
         <a id="csv-link" class="btn secondary" href="#">Download CSV audit</a>
         <button id="rename-btn" class="btn ghost" type="button">Rename month</button>
         <button id="reset-btn" class="btn ghost" type="button">Remove this month</button>
@@ -161,5 +198,6 @@
 
 <script src="/static/app.js"></script>
 <script src="/static/strategist.js"></script>
+<script src="/static/demo.js"></script>
 </body>
 </html>

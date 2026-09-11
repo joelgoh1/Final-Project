@@ -19,24 +19,6 @@ async function init() {
   const boot = await fetch("/api/bootstrap").then((r) => r.json());
   state.advisorStatus = boot.advisor_status;
 
-  $("fixture-list").innerHTML = "";
-  boot.fixtures.forEach((fixture, index) => {
-    const row = document.createElement("div");
-    row.className = "fixture";
-    row.innerHTML = `
-      <div>
-        <h4>${escapeHtml(fixture.label)}</h4>
-        <p>${escapeHtml(fixture.description)}</p>
-        <p>${fixture.transaction_count} transactions &middot; ${escapeHtml(fixture.cycle_label)}</p>
-      </div>`;
-    const button = document.createElement("button");
-    button.className = index === 0 ? "btn" : "btn secondary";
-    button.textContent = "Load demo fixture";
-    button.addEventListener("click", () => runFixture(fixture.id, button));
-    row.appendChild(button);
-    $("fixture-list").appendChild(row);
-  });
-
   const select = $("card-override");
   boot.cards.forEach((card) => {
     const option = document.createElement("option");
@@ -78,19 +60,12 @@ async function init() {
       "(date, merchant, amount) are sent to the model - never names, addresses or card numbers. Untick to stay fully local.";
   }
 
+  // Scenario list and fine-tune panel live in demo.js and build off the same payload.
+  document.dispatchEvent(new CustomEvent("bootstrap-ready", { detail: boot }));
+
   // Months already held by the server survive a page reload.
   await refreshMonths();
   if (state.months.length) await showMonth(state.months[state.months.length - 1].session_id);
-}
-
-async function runFixture(fixtureId, button) {
-  await analyze(button, () =>
-    fetch("/api/analyze/fixture", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fixture_id: fixtureId }),
-    })
-  );
 }
 
 async function runUpload() {
@@ -185,7 +160,7 @@ function renderOverview() {
       return `
       <tr data-id="${escapeHtml(m.session_id)}" class="${m.session_id === activeMonthId() ? "active" : ""}">
         <td>${escapeHtml(m.label)}</td>
-        <td class="muted">${escapeHtml(m.source.kind === "fixture" ? "demo" : m.source.label || "upload")}</td>
+        <td class="muted">${escapeHtml(m.source.kind === "upload" ? m.source.label || "upload" : "demo")}</td>
         <td class="num">${money(s.total_spend)}</td>
         <td class="num">${money(s.actual_rewards)}</td>
         <td class="num">${money(s.optimal_rewards)}</td>
@@ -298,7 +273,7 @@ function renderSourceLine(data) {
     data.source.label && data.source.label !== data.label ? data.source.label : null,
     data.source.cycle_label && data.source.cycle_label !== data.label ? data.source.cycle_label : null,
     `${s.transaction_count} transactions`,
-    data.source.kind === "fixture" ? "synthetic demo data" : "your upload, held in memory only",
+    data.source.kind === "upload" ? "your upload, held in memory only" : "synthetic demo data",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -388,6 +363,7 @@ function renderDashboard(data) {
     .join("");
 
   $("csv-link").href = `/api/export/${data.session_id}.csv`;
+  if (typeof renderDemoControls === "function") renderDemoControls(data);
   $("start").hidden = true;
   $("dashboard").hidden = false;
   window.scrollTo({ top: 0 });

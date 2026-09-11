@@ -8,9 +8,9 @@ from typing import Optional
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
-from . import catalog
+from . import catalog, demo
 from .config import load_dotenv
 
 load_dotenv()
@@ -33,6 +33,22 @@ app = FastAPI(
 class FixtureRequest(BaseModel):
     fixture_id: str
     wallet: Optional[list[str]] = None
+    label: Optional[str] = None
+
+
+class DemoRequest(BaseModel):
+    """Start from a preset (or the defaults) and override any generator knob."""
+
+    preset: Optional[str] = None
+    wallet: Optional[list[str]] = None
+    month: Optional[str] = None
+    transaction_count: Optional[int] = None
+    total_spend: Optional[float] = None
+    mix: Optional[dict[str, float]] = None
+    unmapped_pct: Optional[float] = None
+    card_mode: Optional[str] = None
+    primary_card: Optional[str] = None
+    seed: Optional[int] = None
     label: Optional[str] = None
 
 
@@ -103,6 +119,7 @@ def bootstrap() -> dict:
             for card in cards.values()
         ],
         "samples": sorted(p.name for p in SAMPLES_DIR.glob("*.pdf")) if SAMPLES_DIR.exists() else [],
+        "demo": demo.bootstrap_payload(),
         "advisor_status": advisor_status(),
     }
 
@@ -126,6 +143,30 @@ def analyze_fixture(request: FixtureRequest) -> dict:
         },
         label=request.label,
     )
+
+
+@app.post("/api/analyze/demo")
+def analyze_demo(request: DemoRequest) -> dict:
+    """Generate a synthetic statement from the requested knobs and analyze it."""
+    overrides = request.model_dump(exclude={"preset"})
+    try:
+        if request.preset and overrides.get("label") is None:
+            overrides["label"] = demo.preset(request.preset)["label"]
+        config = demo.resolve_config(request.preset, overrides)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown demo preset '{request.preset}'.")
+    except ValidationError as exc:
+        messages = []
+        for error in exc.errors():
+            field = ".".join(str(part) for part in error["loc"]) or "config"
+            messages.append(f"{field}: {error['msg'].removeprefix('Value error, ')}")
+        raise HTTPException(status_code=422, detail=" ".join(messages))
+
+    statement = demo.generate(config)
+    payload = _analyze_and_store(statement.rows, config.wallet, "demo", statement.meta, label=config.label)
+    payload["demo_config"] = config.model_dump()
+    payload["demo_config"]["preset"] = request.preset
+    return payload
 
 
 @app.post("/api/analyze/upload")

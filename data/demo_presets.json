@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "note": "Starting points for the configurable demo. Every field can be overridden from the UI, the API (POST /api/analyze/demo) or the CLI (--demo). mix values are relative spend weights per category; unmapped_pct is the share of spend on merchants the categorizer does not know, which exercises the General Spend guardrail.",
+  "defaults": {
+    "wallet": [
+      "dbs_live_fresh",
+      "uob_one",
+      "ocbc_365"
+    ],
+    "month": "2026-08",
+    "transaction_count": 36,
+    "total_spend": 2800,
+    "mix": {
+      "dining": 30,
+      "groceries": 25,
+      "transport": 10,
+      "utilities": 15,
+      "shopping": 20
+    },
+    "unmapped_pct": 5,
+    "card_mode": "spread",
+    "primary_card": null,
+    "seed": 7
+  },
+  "presets": [
+    {
+      "id": "household_3_card",
+      "label": "3-card household",
+      "description": "Family spend spread across DBS Live Fresh, UOB One and OCBC 365 with no plan, so minimum spends get missed.",
+      "config": {
+        "wallet": [
+          "dbs_live_fresh",
+          "uob_one",
+          "ocbc_365"
+        ],
+        "month": "2026-08",
+        "transaction_count": 36,
+        "total_spend": 2800,
+        "mix": {
+          "dining": 30,
+          "groceries": 25,
+          "transport": 10,
+          "utilities": 15,
+          "shopping": 20
+        },
+        "unmapped_pct": 5,
+        "card_mode": "spread",
+        "seed": 7
+      }
+    },
+    {
+      "id": "single_card_professional",
+      "label": "Everything on one card",
+      "description": "A professional who taps DBS Live Fresh for everything and keeps a flat 1.5% card in the drawer. Dining heavy, a few unfamiliar merchants.",
+      "config": {
+        "wallet": [
+          "dbs_live_fresh",
+          "flat_cashback_card"
+        ],
+        "month": "2026-09",
+        "transaction_count": 32,
+        "total_spend": 2100,
+        "mix": {
+          "dining": 45,
+          "groceries": 10,
+          "transport": 15,
+          "utilities": 10,
+          "shopping": 20
+        },
+        "unmapped_pct": 12,
+        "card_mode": "primary",
+        "primary_card": "dbs_live_fresh",
+        "seed": 11
+      }
+    },
+    {
+      "id": "grocery_family",
+      "label": "Grocery-heavy family",
+      "description": "Big supermarket runs and utilities dominate. UOB One's 10% groceries rate should win, but the habit card is OCBC 365.",
+      "config": {
+        "wallet": [
+          "uob_one",
+          "ocbc_365"
+        ],
+        "month": "2026-07",
+        "transaction_count": 40,
+        "total_spend": 3600,
+        "mix": {
+          "dining": 15,
+          "groceries": 45,
+          "transport": 10,
+          "utilities": 20,
+          "shopping": 10
+        },
+        "unmapped_pct": 4,
+        "card_mode": "habit",
+        "primary_card": "ocbc_365",
+        "seed": 23
+      }
+    },
+    {
+      "id": "online_shopper",
+      "label": "Online shopper and commuter",
+      "description": "Marketplace orders, ride-hailing and food delivery. Small tickets, high count, DBS Live Fresh's $20 cap gets hit early.",
+      "config": {
+        "wallet": [
+          "dbs_live_fresh",
+          "uob_one"
+        ],
+        "month": "2026-10",
+        "transaction_count": 60,
+        "total_spend": 2400,
+        "mix": {
+          "dining": 25,
+          "groceries": 10,
+          "transport": 25,
+          "utilities": 5,
+          "shopping": 35
+        },
+        "unmapped_pct": 6,
+        "card_mode": "primary",
+        "primary_card": "dbs_live_fresh",
+        "seed": 42
+      }
+    },
+    {
+      "id": "already_optimised",
+      "label": "Rate-chasing per purchase",
+      "description": "Each purchase already goes on its best-rate card, yet minimum spends still get missed. Shows that chasing the top rate is not the same as an optimal plan.",
+      "config": {
+        "wallet": [
+          "dbs_live_fresh",
+          "uob_one",
+          "ocbc_365"
+        ],
+        "month": "2026-08",
+        "transaction_count": 30,
+        "total_spend": 3000,
+        "mix": {
+          "dining": 30,
+          "groceries": 30,
+          "transport": 15,
+          "utilities": 15,
+          "shopping": 10
+        },
+        "unmapped_pct": 3,
+        "card_mode": "best_rate",
+        "seed": 5
+      }
+    }
+  ]
+}
