@@ -55,22 +55,6 @@ class DemoRequest(BaseModel):
     label: Optional[str] = None
 
 
-class DemoRequest(BaseModel):
-    """Start from a preset (or the defaults) and override any generator knob."""
-
-    preset: Optional[str] = None
-    wallet: Optional[list[str]] = None
-    month: Optional[str] = None
-    transaction_count: Optional[int] = None
-    total_spend: Optional[float] = None
-    mix: Optional[dict[str, float]] = None
-    unmapped_pct: Optional[float] = None
-    card_mode: Optional[str] = None
-    primary_card: Optional[str] = None
-    seed: Optional[int] = None
-    label: Optional[str] = None
-
-
 class MonthUpdate(BaseModel):
     label: str
 

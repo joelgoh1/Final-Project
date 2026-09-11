@@ -47,7 +47,7 @@
   const chat = { history: [], sessionId: null, busy: false };
 
   function currentSessionId() {
-    return (window.state && state.session && state.session.session_id) || null;
+    return (typeof state !== "undefined" && state.session && state.session.session_id) || null;
   }
 
   function renderTree(advisor) {
