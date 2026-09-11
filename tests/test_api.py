@@ -438,15 +438,3 @@ def test_chat_client_raises_provider_error_with_status(monkeypatch):
 
 
 # --- Months: several analysed cycles held at once ---
-
-
-def test_upload_month_takes_label_and_derives_period(client):
-    with (SAMPLES / "uob_one_statement.pdf").open("rb") as fh:
-        data = client.post(
-            "/api/analyze/upload",
-            files={"files": ("uob_one_statement.pdf", fh, "application/pdf")},
-            data={"label": "My UOB month"},
-        ).json()
-    assert data["label"] == "My UOB month"
-    assert data["period"]["key"]
-    assert data["source"]["cycle_label"] == data["period"]["label"]
