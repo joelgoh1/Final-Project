@@ -287,16 +287,21 @@ function renderDashboard(data) {
   renderMonthTabs();
   renderOverview();
 
-  $("kpi-spend").textContent = money(s.total_spend);
-  $("kpi-count").textContent = `${s.transaction_count} line items`;
-  $("kpi-actual").textContent = money(s.actual_rewards);
-  $("kpi-actual-yield").textContent = `${s.actual_yield_pct}% effective yield`;
-  $("kpi-optimal").textContent = money(s.optimal_rewards);
-  $("kpi-optimal-yield").textContent = `${s.optimal_yield_pct}% if optimally allocated`;
   $("kpi-missed").textContent = money(s.missed_value);
+  $("kpi-actual").textContent = money(s.actual_rewards);
+  $("kpi-optimal").textContent = money(s.optimal_rewards);
+  $("verdict").classList.toggle("clean", !!s.already_optimal);
+  $("verdict-lede").innerHTML =
+    `You earned <strong>${s.actual_yield_pct}%</strong> on ${money(s.total_spend)} of spend ` +
+    `across ${s.transaction_count} line items. The same purchases, on the cards already in ` +
+    `your wallet, would have paid <strong class="pos">${s.optimal_yield_pct}%</strong>.`;
   $("kpi-missed-sub").textContent = s.already_optimal
     ? "Your allocation is already optimal for these rules."
-    : `across ${data.suboptimal_count} transactions on the wrong card`;
+    : `${data.suboptimal_count} of ${s.transaction_count} purchases went on the wrong card.`;
+  // both bars are shares of the optimal figure, so they are directly comparable
+  const earnedShare = s.optimal_rewards > 0 ? (s.actual_rewards / s.optimal_rewards) * 100 : 0;
+  $("bar-actual").style.width = `${Math.min(earnedShare, 100)}%`;
+  $("bar-optimal").style.width = "100%";
 
   const maxSpend = Math.max(...data.categories.map((c) => c.spend), 1);
   $("category-bars").innerHTML = data.categories
@@ -316,9 +321,16 @@ function renderDashboard(data) {
     .map(
       (rule) => `
       <div class="rule">
+        <h4>
+          <span>${escapeHtml(rule.category_label)}</span>
+          <svg class="arrow" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path
+               d="M4 12h15" /><path d="M13 6l6 6-6 6" /></svg>
+          <span class="to">${escapeHtml(rule.card_name)}</span>
+        </h4>
         <span class="amount">${money(rule.projected_reward)}</span>
-        <h4>${escapeHtml(rule.category_label)} &rarr; ${escapeHtml(rule.card_name)} (${escapeHtml(rule.rate_label)})</h4>
-        <p>${escapeHtml(rule.condition)}</p>
+        <p class="rate">next month, at ${escapeHtml(rule.rate_label)}</p>
+        <p class="cond">${escapeHtml(rule.condition)}</p>
       </div>`
     )
     .join("");
@@ -445,7 +457,7 @@ function renderAdvisor(advisor) {
 }
 
 function currentTheme() {
-  return document.documentElement.getAttribute("data-theme") || "dark";
+  return document.documentElement.getAttribute("data-theme") || "light";
 }
 
 function toggleTheme() {

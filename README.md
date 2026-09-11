@@ -51,13 +51,13 @@ python tools/analyze_cli.py --fixture sg_multi_card_cycle \
 
 1. Open the app. Point at the privacy pill: *no bank logins, in-memory only.*
 2. Click **Load demo fixture** on the 3-card cycle. Time it - dashboard in under a second.
-3. Read the headline: **"$72.24 missed this cycle"** on $2,822 of spend. Ask: *"Would you
+3. Read the headline: **"$72.24 left on the table this cycle"** on $2,822 of spend. Ask: *"Would you
    want to know this number for your own cards?"*
 4. Scroll to **Suboptimal transactions**: groceries on DBS Live Fresh instead of UOB One
    ($17.88 on one NTUC trip). Ask: *"Did you know that was the wrong card?"*
 5. Show **Cards this cycle**: OCBC 365 `min spend missed` - $371 on a card that needs $800,
    so its 6% dining earned 0.3%.
-6. Show the **Wallet cheat sheet** (three rules) and, if the strategist is on, the AI plan
+6. Show **Three rules for next month** and, if the strategist is on, the AI plan
    with its engine-verified projection and watch-outs.
 7. Click **Download CSV audit**. Then **Clear session**.
 8. The question that tests the riskiest assumption: *"Would you upload your real
