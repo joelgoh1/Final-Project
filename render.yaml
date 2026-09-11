@@ -1,0 +1,21 @@
+# Render blueprint - https://render.com/docs/blueprint-spec
+# One free web service built from the repo's Dockerfile. Render injects $PORT,
+# which the image's CMD already honours.
+services:
+  - type: web
+    name: card-reward-optimizer
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      # Not secret - the strategist's endpoint and model.
+      - key: LLM_BASE_URL
+        value: https://opencode.ai/zen/go/v1
+      - key: LLM_MODEL
+        value: deepseek-v4.1-flash
+      # sync: false keeps the key out of git - set it in the Render dashboard.
+      - key: OPENCODE_API_KEY
+        sync: false

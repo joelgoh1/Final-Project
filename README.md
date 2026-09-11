@@ -1,14 +1,3 @@
----
-title: Card Reward & Spend Optimizer
-emoji: 💳
-colorFrom: indigo
-colorTo: blue
-sdk: docker
-app_port: 7860
-pinned: false
-short_description: Find the cashback your card wallet left on the table
----
-
 # Statement-Based Card Reward & Spend Optimizer (v1)
 
 Load a demo statement (or drop an unlocked DBS / OCBC / UOB PDF e-statement), and in
@@ -177,34 +166,32 @@ applications or referrals.
 
 ## Deploy
 
-Hosted on a free [Hugging Face Space](https://huggingface.co/spaces) (Docker SDK). The
-`Dockerfile` at the repo root is the whole deployment: Spaces builds it on every push to
-the Space's `main` and restarts the container.
+Hosted on [Render](https://render.com)'s free tier, built from the `Dockerfile` at the
+repo root - the same image that runs locally, serving the API and the static frontend
+from one container. `render.yaml` declares the service, so the setup is reproducible.
 
 First time only:
 
-```bash
-# 1. Create the Space on huggingface.co: SDK = Docker, hardware = CPU basic (free).
-# 2. Add the key under Space -> Settings -> Variables and secrets -> New secret:
-#      name  OPENCODE_API_KEY
-#      value sk-...
-#    Spaces injects it as an env var, which app/config.py already prefers over .env.
-# 3. Point this repo at the Space (needs a write token from huggingface.co/settings/tokens):
-git remote add space https://huggingface.co/spaces/<user>/<space-name>
-```
+1. Sign in to Render with GitHub and pick **New > Blueprint**, then select this repo.
+   Render reads `render.yaml` and creates the service. No credit card needed.
+2. In the service's **Environment** tab, set `OPENCODE_API_KEY` to the OpenCode key.
+   The blueprint marks it `sync: false`, so it is never stored in git. Leave it unset
+   and the dashboard still works - the strategist card just reports itself unavailable.
 
 Every deploy after that:
 
 ```bash
-git push space main          # build logs stream in the Space's "Logs" tab
+git push origin main         # autoDeploy builds and swaps the container
 ```
 
 Notes:
 
-- The YAML block at the top of this README is the Space's config - Spaces requires it
-  there. GitHub renders it as a table; that is the only cost of keeping one README.
-- Free Spaces sleep after ~48h idle and wake on the next request (a slow first load).
-- Sessions are in-memory, so a rebuild drops any months a visitor was holding. That is
-  the same 30-minute promise as local, just with deploys as an extra reset.
-- `LLM_BASE_URL` / `LLM_MODEL` can go in the same panel as plain *variables* - they are
-  not secrets.
+- Free services sleep after 15 minutes of inactivity, and a Python cold start takes
+  30-60s. Open the URL once to warm it up before demoing.
+- Sessions are in-memory, so a deploy or a sleep drops any months a visitor was
+  holding. Same 30-minute promise as local, with deploys as an extra reset.
+- `plan: free` caps the service at one instance, which is what the in-memory session
+  store needs - months are process-local and would not survive load balancing.
+- The image is host-agnostic. Cloud Run (real Secret Manager, needs a billing account)
+  or Cloudflare Containers (no sleeping, Workers Paid at $5/mo) take the same
+  `Dockerfile` if the free tier's cold starts become annoying.
