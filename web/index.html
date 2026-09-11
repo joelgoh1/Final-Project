@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,7 +7,7 @@
 <script>
   (function () {
     var saved = localStorage.getItem("theme");
-    document.documentElement.setAttribute("data-theme", saved || "dark");
+    document.documentElement.setAttribute("data-theme", saved || "light");
   })();
 </script>
 <link rel="stylesheet" href="/static/styles.css" />
@@ -23,7 +23,7 @@
   </div>
   <div class="topbar-right">
     <p class="privacy-pill">No bank logins &middot; processed in memory &middot; nothing saved to disk</p>
-    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode">Light mode</button>
+    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode">Dark mode</button>
   </div>
 </header>
 
@@ -145,12 +145,31 @@
       </div>
     </div>
 
-    <div class="kpi-row">
-      <div class="kpi"><span class="kpi-label">Total spend</span><strong id="kpi-spend"></strong><span class="kpi-sub" id="kpi-count"></span></div>
-      <div class="kpi"><span class="kpi-label">Rewards earned</span><strong id="kpi-actual"></strong><span class="kpi-sub" id="kpi-actual-yield"></span></div>
-      <div class="kpi"><span class="kpi-label">Optimal card yield</span><strong id="kpi-optimal"></strong><span class="kpi-sub" id="kpi-optimal-yield"></span></div>
-      <div class="kpi headline"><span class="kpi-label">Missed this cycle</span><strong id="kpi-missed"></strong><span class="kpi-sub" id="kpi-missed-sub"></span></div>
+    <div id="verdict" class="verdict">
+      <div class="verdict-main">
+        <p class="verdict-label">Left on the table this cycle</p>
+        <strong id="kpi-missed" class="verdict-figure"></strong>
+        <p id="verdict-lede" class="verdict-lede"></p>
+        <p id="kpi-missed-sub" class="verdict-sub muted small"></p>
+      </div>
+      <div class="verdict-compare">
+        <div class="compare-row">
+          <div class="compare-head"><span>What you earned</span><strong id="kpi-actual"></strong></div>
+          <div class="bar-track"><div id="bar-actual" class="bar-fill inert"></div></div>
+        </div>
+        <div class="compare-row">
+          <div class="compare-head"><span>What it could have been</span><strong id="kpi-optimal" class="pos"></strong></div>
+          <div class="bar-track"><div id="bar-optimal" class="bar-fill"></div></div>
+        </div>
+        <p class="verdict-note muted small">That upper figure re-routes every purchase perfectly, which nobody
+          manages in practice. The three rules below are the version you can actually follow.</p>
+      </div>
     </div>
+
+    <section class="card">
+      <h3>Three rules for next month <span class="tag">rules engine</span></h3>
+      <div id="wallet-rules" class="rules"></div>
+    </section>
 
     <div class="grid">
       <section class="card">
@@ -163,11 +182,6 @@
         <div id="advisor-body"></div>
       </section>
     </div>
-
-    <section class="card">
-      <h3>Wallet cheat sheet <span class="tag">rules engine</span></h3>
-      <div id="wallet-rules" class="rules"></div>
-    </section>
 
     <section class="card">
       <h3>Suboptimal transactions <span id="suboptimal-count" class="tag"></span></h3>
